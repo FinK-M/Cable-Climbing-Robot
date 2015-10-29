@@ -19,7 +19,6 @@ void setup()
 
 void loop()
 {
-  Serial.println(analogRead(A0));
   delay(100);
 }
 
@@ -32,7 +31,7 @@ void receiveEvent(int howMany)
   {
     x = Wire.read(); // receive byte as a character
     updateDisplay(x);
-    Serial.print(x);         // print the character
+    Serial.print(x);         // prin"t the character
   }
   if(x == 9)
     Serial.println("");
@@ -40,10 +39,16 @@ void receiveEvent(int howMany)
 
 void requestEvent(void)
 {
-  int aInt = analogRead(A0);
-  char str[10];
-  sprintf(str, "%d", aInt);
-  Wire.write(str);
+  int input = analogRead(A0);
+  if(input >= 1024)
+    input = 1023;
+  if(input <= 0)
+    input = 1;
+  uint8_t buffer[2];
+  buffer[0] = input >> 8;
+  buffer[1] = input & 0xff;
+  Wire.write(buffer, 2);
+
 }
 
 void updateDisplay(int value)

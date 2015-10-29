@@ -52,10 +52,24 @@ void loop() {
         // Find the next command in input string
         command = strtok(0, ",");
     }
-    Wire.requestFrom(8, 1);
-    while(Wire.available())
-      serial1.print(Wire.read());
-    serial1.println("ack");
+    delay(100);
+    Wire.beginTransmission(8);
+    int available = Wire.requestFrom(8, (uint8_t)2);
+    delay(100);
+    if(available == 2)
+    {
+      int receivedValue = Wire.read() << 8 | Wire.read();
+      serial1.print(receivedValue);
+    }
+    else
+    {
+      serial1.print("Incorrect number of bytes: ");
+      serial1.print(available);
+    }
+
+    Wire.endTransmission();
+    delay(100);
+    serial1.println(",ack");
     Serial.println("");
   }
 }
