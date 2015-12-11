@@ -1,11 +1,10 @@
 #define INPUT_SIZE 24
 #include <SoftwareSerial.h>
 #include <Wire.h>
-SoftwareSerial serial1(8, 9); // RX, TX
+// SoftwareSerial Serial(8, 9); // RX, TX
 
 void setup() {
   // put your setup code here, to run once:
-  serial1.begin(19200);
   Serial.begin(19200);
   Wire.begin();
 }
@@ -18,11 +17,11 @@ void send(int message, int address){
 }
 
 void loop() {
-  if(serial1.available()){
+  if(Serial.available()){
   
     // Get next command from Serial (add 1 for final 0)
     char input[INPUT_SIZE + 1];
-    byte size = serial1.readBytes(input, INPUT_SIZE);
+    byte size = Serial.readBytes(input, INPUT_SIZE);
     // Add the final 0 to end the C string
     input[size] = 0;
     
@@ -42,12 +41,12 @@ void loop() {
     
             // Do something with servoId and position
             if(strcmp(ident, "LED") == 0){
-              Serial.println("Sending");
+              //Serial.println("Sending");
               send(value, 8);
             }
-            Serial.print(ident);
-            Serial.print(" ");
-            Serial.println(value);
+            //Serial.print(ident);
+            //Serial.print(" ");
+            //Serial.println(value);
         }
         // Find the next command in input string
         command = strtok(0, ",");
@@ -59,17 +58,17 @@ void loop() {
     if(available == 2)
     {
       int receivedValue = Wire.read() << 8 | Wire.read();
-      serial1.print(receivedValue);
+      Serial.print(receivedValue);
     }
     else
     {
-      serial1.print("Incorrect number of bytes: ");
-      serial1.print(available);
+      Serial.print("Incorrect number of bytes: ");
+      Serial.print(available);
     }
 
     Wire.endTransmission();
     delay(100);
-    serial1.println(",ack");
+    Serial.println(",ack");
     Serial.println("");
   }
 }

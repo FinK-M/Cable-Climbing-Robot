@@ -9,8 +9,10 @@ while True:
         while(not ser.inWaiting()):
             sleep(0.05)
 
-        available = ser.inWaiting()
         try:
+            available = 0
+            while available < 7:
+                available = ser.inWaiting()
             line = ser.read(available).decode().rstrip("\r\n")
             data = line.split(",")
             if 0 < int(data[0]) < 1024:
