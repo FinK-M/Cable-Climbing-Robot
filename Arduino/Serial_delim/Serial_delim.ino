@@ -1,5 +1,6 @@
 #define INPUT_SIZE 24
 #include <Wire.h>
+<<<<<<< HEAD
 
 void setup() {
   // Serial 1 is for Xbee Module
@@ -19,6 +20,7 @@ void send(int message, int address){
 }
 
 void loop() {
+<<<<<<< HEAD
   if(Serial1.available()){
     // Get next command from Serial (add 1 for final 0)
     char input[INPUT_SIZE + 1];

@@ -20,7 +20,7 @@ void setup()
 
 void loop()
 {
-  delay(100);
+  
 }
 
 // function that executes whenever data is received from master
@@ -30,7 +30,7 @@ void receiveEvent(int howMany)
   int x = 0;
   while (Wire.available()) // loop through all but the last
   {
-    x = Wire.read(); // receive byte as a character
+    x = Wire.read();       // receive byte as a character
     updateDisplay(x);
     Serial.print(x);         // print the character
   }
