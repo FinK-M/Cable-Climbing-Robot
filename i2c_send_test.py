@@ -1,14 +1,14 @@
 from time import sleep
 from serial import Serial
 
-ser = Serial("COM5", baudrate=19200)
+ser = Serial("COM3", baudrate=57600)
 while True:
     for i in range(10):
-        message = "LED:" + str(i) + ",MOT:80,SER:180\n"
+        ser.flush()
+        message = "LED:{0},MOT:80,SER:{1}\n".format(i, i * 10)
         ser.write(message.encode())
-        while(not ser.inWaiting()):
+        while(ser.inWaiting() < 7):
             sleep(0.05)
-
         available = ser.inWaiting()
         try:
             line = ser.read(available).decode().rstrip("\r\n")
@@ -18,5 +18,7 @@ while True:
             else:
                 print("invalid data")
         except:
-            print(ser.read(available))
+            print("failed")
+            print(ser.readline())
             sleep(1)
+        sleep(0.05)

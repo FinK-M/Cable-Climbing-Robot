@@ -7,6 +7,7 @@ void setup()
 
   int pincount  = sizeof(pins);
   pinMode(A0, INPUT);
+  pinMode(13, OUTPUT);
   for(int i = 0; i < pincount; i++)
     pinMode(pins[i], OUTPUT);
   
@@ -14,7 +15,7 @@ void setup()
   Wire.onReceive(receiveEvent); // register event
   Wire.onRequest(requestEvent);
   
-  Serial.begin(19200);           // start serial for output
+  Serial.begin(57600);           // start serial for output
 }
 
 void loop()
@@ -31,7 +32,7 @@ void receiveEvent(int howMany)
   {
     x = Wire.read(); // receive byte as a character
     updateDisplay(x);
-    Serial.print(x);         // prin"t the character
+    Serial.print(x);         // print the character
   }
   if(x == 9)
     Serial.println("");
@@ -39,6 +40,7 @@ void receiveEvent(int howMany)
 
 void requestEvent(void)
 {
+  Serial.println("Requested");
   int input = analogRead(A0);
   if(input >= 1024)
     input = 1023;
@@ -53,6 +55,7 @@ void requestEvent(void)
 
 void updateDisplay(int value)
 {
+  /*
   if(value >= 0 && value <= 10)
   {
     int bits[4] = {0,0,0,0};
@@ -65,5 +68,10 @@ void updateDisplay(int value)
     for (int i=0; i < 4; i++)
       digitalWrite(pins[i], result[i]);
   }
+  */
+  if(value % 2 == 0)
+    PORTB = PORTB | B00000000;
+  else
+    PORTB = PORTB | B00100000;
 }
 
