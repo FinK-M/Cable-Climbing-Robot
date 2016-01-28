@@ -29,7 +29,8 @@ void receiveEvent(int howMany)
   while (Wire.available()) // loop through all but the last
   {
     pos = Wire.read(); // receive byte as a character
-    if(pos != last_pos){
+    if(pos != last_pos)
+    {
       myservo.write(pos);
       last_pos = pos;
     }

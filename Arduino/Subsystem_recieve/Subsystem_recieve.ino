@@ -44,13 +44,12 @@ void requestEvent(void)
   int input = analogRead(A0);
   if(input >= 1024)
     input = 1023;
-  if(input <= 0)
+  else if(input <= 0)
     input = 1;
   uint8_t buffer[2];
   buffer[0] = input >> 8;
   buffer[1] = input & 0xff;
   Wire.write(buffer, 2);
-
 }
 
 void updateDisplay(int value)
