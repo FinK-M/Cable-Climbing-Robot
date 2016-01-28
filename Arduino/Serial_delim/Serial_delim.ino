@@ -42,7 +42,11 @@ void loop() {
     
             // Send the LED value to the appropriate subsystem
             if(strcmp(ident, "LED") == 0){
-              send(value, 8);
+              char msg[6];
+              sprintf(msg, "LED:%d", value);
+              Wire.beginTransmission(8);
+              Wire.write(msg);
+              Wire.endTransmission();
             }
             // Send the servo position to the appropriate subsystem
             else if(strcmp(ident, "SER") == 0){

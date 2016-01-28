@@ -16,31 +16,38 @@ void setup()
   Wire.onRequest(requestEvent);
   
   Serial.begin(57600);           // start serial for output
+
 }
 
 void loop()
 {
-  
+  delay(100); 
 }
 
 // function that executes whenever data is received from master
 // this function is registered as an event, see setup()
 void receiveEvent(int howMany)
 {
-  int x = 0;
+  char buff[2];
+  char str[80] = "";
   while (Wire.available()) // loop through all but the last
   {
-    x = Wire.read();       // receive byte as a character
-    updateDisplay(x);
-    Serial.print(x);         // print the character
+    sprintf(buff, "%c", Wire.read());      // receive byte as a character
+    strcat(str, buff);
   }
-  if(x == 9)
-    Serial.println("");
+  if(howMany > 0){
+    char* separator = strchr(str, ':');
+    *separator = 0;
+    char* ident = str;
+    ++separator;
+    int value = atoi(separator);
+    Serial.println(value);
+    changeLED(value);
+  }
 }
 
 void requestEvent(void)
 {
-  Serial.println("Requested");
   int input = analogRead(A0);
   if(input >= 1024)
     input = 1023;
@@ -52,9 +59,16 @@ void requestEvent(void)
   Wire.write(buffer, 2);
 }
 
+void changeLED(int value)
+{
+  if(value % 2 == 0)
+    PORTB = PORTB & B11000000;
+  else
+    PORTB = PORTB | B00100000;
+}
+
 void updateDisplay(int value)
 {
-  /*
   if(value >= 0 && value <= 10)
   {
     int bits[4] = {0,0,0,0};
@@ -67,10 +81,6 @@ void updateDisplay(int value)
     for (int i=0; i < 4; i++)
       digitalWrite(pins[i], result[i]);
   }
-  */
-  if(value % 2 == 0)
-    PORTB = PORTB | B00000000;
-  else
-    PORTB = PORTB | B00100000;
+
 }
 
