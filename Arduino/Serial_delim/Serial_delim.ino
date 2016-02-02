@@ -1,4 +1,7 @@
-#define INPUT_SIZE 24
+#define INPUT_SIZE 100
+#define UNO_0_ADR 8
+#define UNO_1_ADR 9
+
 #include <Wire.h>
 
 void setup() {
@@ -12,14 +15,41 @@ void setup() {
   Wire.begin();
 }
 
-void send(int message, int address){
-  Wire.beginTransmission(address); // transmit to device a
-  Wire.write(message);       // sends one byte
-  Wire.endTransmission();    // stop transmitting
+void send(char* message, int address, char* type){
+  // type variable checks if to convert string to an integer first or not
+  Wire.beginTransmission(address);  // transmit to device at address
+  if(type == "int")
+  {
+    Wire.write(atoi(message));
+  }
+  else
+    Wire.write(message);          // send message byte by byte
+  Wire.endTransmission();         // stop transmitting
+  Wire.flush();
 }
 
+int get_adc_val(int address){
+    int receivedValue = 0;
+    Wire.beginTransmission(address);
+    int available = Wire.requestFrom(address, (uint8_t)2);
+    if(available == 2)
+    {
+      receivedValue = Wire.read() << 8 | Wire.read();
+      Serial1.print(receivedValue);
+    }
+    else
+    {
+      Serial1.print("Incorrect number of bytes: ");
+      Serial1.print(available);
+    }
+    Wire.endTransmission();
+    Serial1.println(",ack");
+    return receivedValue;
+}
+
+
 void loop() {
-  if(Serial1.available()){
+  if(Serial1.available()) {
     // Get next command from Serial (add 1 for final 0)
     char input[INPUT_SIZE + 1];
     byte size = Serial1.readBytes(input, INPUT_SIZE);
@@ -38,42 +68,26 @@ void loop() {
             *separator = 0;
             char* ident = command;
             ++separator;
-            int value = atoi(separator);
+            char* value = separator;
     
             // Send the LED value to the appropriate subsystem
             if(strcmp(ident, "LED") == 0){
               char msg[6];
-              sprintf(msg, "LED:%d", value);
-              Wire.beginTransmission(8);
-              Wire.write(msg);
-              Wire.endTransmission();
+              sprintf(msg, "LED:%s", value);
+              send(msg, UNO_0_ADR, "char");
             }
             // Send the servo position to the appropriate subsystem
             else if(strcmp(ident, "SER") == 0){
-              send(value, 9);
+              send(value, UNO_1_ADR, "int");
+            }
+            // Get an ADC value fr
+            else if(strcmp(ident, "ADC") == 0){
+              // Value is address, so need to convert from char* to int
+              get_adc_val(atoi(value));
             }
         }
         // Find the next command in input string
         command = strtok(0, ",");
     }
-    Wire.beginTransmission(8);
-    int available = Wire.requestFrom(8, (uint8_t)2);
-    if(available == 2)
-    {
-      int receivedValue = Wire.read() << 8 | Wire.read();
-      Serial1.print(receivedValue);
-      Serial.print(receivedValue);
-    }
-    else
-    {
-      Serial1.print("Incorrect number of bytes: ");
-      Serial1.print(available);
-      Serial.print("Incorrect number of bytes: ");
-      Serial.print(available);
-    }
-
-    Wire.endTransmission();
-    Serial1.println(",ack");
-    Serial.println(",ack");
   }
 }

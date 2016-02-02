@@ -1,13 +1,17 @@
 #include <Wire.h>
+#define ARRAY_LEN 10
 
-int pins[] = {2, 5, 4, 3};
+uint8_t pins[] = {2, 5, 4, 3};
+int vals[ARRAY_LEN] = {0};
+int new_val = 1;
+int avg = 1;
 
 void setup()
 {
-
   int pincount  = sizeof(pins);
   pinMode(A0, INPUT);
   pinMode(13, OUTPUT);
+  pinMode(8, OUTPUT);
   for(int i = 0; i < pincount; i++)
     pinMode(pins[i], OUTPUT);
   
@@ -16,12 +20,18 @@ void setup()
   Wire.onRequest(requestEvent);
   
   Serial.begin(57600);           // start serial for output
-
 }
 
 void loop()
 {
-  delay(100); 
+  // shift array one place to right
+  for(int i = ARRAY_LEN - 1; i > 0; i--)
+    vals[i] = vals[i-1];
+
+  // get latest reading and insert into array
+  cli();
+  vals[0] = analogRead(A0);
+  sei();
 }
 
 // function that executes whenever data is received from master
@@ -35,36 +45,77 @@ void receiveEvent(int howMany)
     sprintf(buff, "%c", Wire.read());      // receive byte as a character
     strcat(str, buff);
   }
+  cli();
   if(howMany > 0){
     char* separator = strchr(str, ':');
     *separator = 0;
     char* ident = str;
     ++separator;
     int value = atoi(separator);
-    Serial.println(value);
-    changeLED(value);
+    int led = value / 10;
+    int val = value % 10;
+    if(led == 1)
+      changeLED0(val);
+    else if(led == 2)
+      changeLED1(val);
+
+  sei();
   }
 }
 
 void requestEvent(void)
 {
-  int input = analogRead(A0);
-  if(input >= 1024)
-    input = 1023;
-  else if(input <= 0)
-    input = 1;
-  uint8_t buffer[2];
-  buffer[0] = input >> 8;
-  buffer[1] = input & 0xff;
-  Wire.write(buffer, 2);
+  int sum = 0;
+  // get sum of latest array
+  for(int i = 0; i < ARRAY_LEN; i++)
+    sum += vals[i];
+  // get current average
+  avg = sum/ARRAY_LEN;
+
+  // Uncomment for debug print statements
+  /*
+  for(int i = 0; i < ARRAY_LEN; i++)
+  {
+    Serial.print(vals[i]);
+    Serial.print(" ");
+  }
+  Serial.println(avg);
+  */
+
+  // Deal with incorrect values
+  if(avg >= 1024)
+    avg = 1023;
+  // Zeros will not send correctly, set to one
+  else if(avg <= 0)
+    avg = 1;
+
+  // Create two bytes to send
+  uint8_t buff[2];
+  // Low byte
+  buff[0] = avg >> 8;
+  // High byte
+  buff[1] = avg & 0xff;
+  Wire.write(buff, 2);
 }
 
-void changeLED(int value)
+void changeLED0(int value)
 {
   if(value % 2 == 0)
-    PORTB = PORTB & B11000000;
+    //digitalWrite(13, LOW);
+    PORTB = PORTB & B11011111;
   else
+    //digitalWrite(13, HIGH);
     PORTB = PORTB | B00100000;
+}
+
+void changeLED1(int value)
+{
+  if(value % 2 == 0)
+    //digitalWrite(8, LOW);
+    PORTB = PORTB & B11111110;
+  else
+    //digitalWrite(8, HIGH);
+    PORTB = PORTB | B00000001;
 }
 
 void updateDisplay(int value)
