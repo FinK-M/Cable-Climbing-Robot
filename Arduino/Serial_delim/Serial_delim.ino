@@ -5,6 +5,15 @@
 #include <Wire.h>
 
 void setup() {
+  pinMode(22, OUTPUT);
+  pinMode(23, OUTPUT);
+  delay(100);
+  pinMode(22, INPUT);
+  pinMode(23, INPUT);
+
+  pinMode(9, OUTPUT);
+  tone(9, 523, 300);
+  delay(50);
   // Serial 1 is for Xbee Module
   Serial1.begin(57600);
   // Must set short timeout otherwise will hang when reading data
@@ -13,6 +22,7 @@ void setup() {
   Serial.begin(57600);
   // Start I2C
   Wire.begin();
+  tone(9, 1046, 300);
 }
 
 void send(char* message, int address, char* type){
@@ -80,6 +90,11 @@ void loop() {
             else if(strcmp(ident, "SER") == 0){
               send(value, UNO_1_ADR, "int");
             }
+            
+            else if(strcmp(ident, "RST") == 0){
+                pinMode(24, OUTPUT);
+            }
+            
             // Get an ADC value fr
             else if(strcmp(ident, "ADC") == 0){
               // Value is address, so need to convert from char* to int

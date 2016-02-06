@@ -5,7 +5,7 @@ ser = Serial("COM3", baudrate=57600)
 while True:
     for i in range(9):
         ser.flush()
-        message = "LED:1{0},LED:2{1},SER:{2},ADC:8".format(i, i + 1, i * 10)
+        message = "LED:1{0},LED:2{1},SER:{2},ADC:8".format(i, i+1, 50+i*10)
         ser.write(message.encode())
         try:
             available = 0
@@ -19,9 +19,9 @@ while True:
                 print("invalid data: {0}".format(data))
         except:
             print("failed")
-            print(ser.readline())
+            ser.write("RST:1,".encode())
             ser.close()
-            sleep(.2)
+            sleep(1)
             ser.open()
             sleep(1)
-        sleep(0.01)
+        sleep(0.5)

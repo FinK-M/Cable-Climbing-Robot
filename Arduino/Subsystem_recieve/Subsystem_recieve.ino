@@ -2,9 +2,11 @@
 #define ARRAY_LEN 10
 
 uint8_t pins[] = {2, 5, 4, 3};
+
 int vals[ARRAY_LEN] = {0};
 int new_val = 1;
 int avg = 1;
+
 
 void setup()
 {
@@ -51,13 +53,22 @@ void receiveEvent(int howMany)
     *separator = 0;
     char* ident = str;
     ++separator;
-    int value = atoi(separator);
-    int led = value / 10;
-    int val = value % 10;
-    if(led == 1)
-      changeLED0(val);
-    else if(led == 2)
-      changeLED1(val);
+    
+    if(strcmp(ident, "LED") == 0){
+      int value = atoi(separator);
+      int led = value / 10;
+      int val = value % 10;
+      if(led == 1)
+        changeLED0(val);
+      else if(led == 2)
+        changeLED1(val);
+    }
+    else if(strcmp(ident, "RCV") == 0){
+      if(strcmp(separator, "IDENT") == 0){
+
+      }
+    }
+    
 
   sei();
   }
@@ -71,16 +82,6 @@ void requestEvent(void)
     sum += vals[i];
   // get current average
   avg = sum/ARRAY_LEN;
-
-  // Uncomment for debug print statements
-  /*
-  for(int i = 0; i < ARRAY_LEN; i++)
-  {
-    Serial.print(vals[i]);
-    Serial.print(" ");
-  }
-  Serial.println(avg);
-  */
 
   // Deal with incorrect values
   if(avg >= 1024)
