@@ -1,6 +1,11 @@
 #include <Wire.h>
-#define DIR 8
-#define STEP 9
+
+#define DIR 4
+#define STEP 8
+
+volatile int pulse_count = 0;
+volatile int max_pulses;
+volatile boolean continuous = false;
 
 uint8_t last_rpm = 0;
 uint8_t rpm = 0;
@@ -34,16 +39,15 @@ void receiveEvent(int howMany)
     rpm = Wire.read(); // receive byte as a character
     if(rpm != last_rpm)
     {
-      set_speed(rpm);
+      start_run(rpm);
       last_rpm = rpm;
     }
-    Serial.print(rpm);         // print the character
+    Serial.println(rpm);         // print the character
   }
 }
 
 void requestEvent(void)
 {
-  Serial.println("Requested");
   int input = analogRead(A0);
   if(input >= 1024)
     input = 1023;
@@ -57,32 +61,66 @@ void requestEvent(void)
 }
 
 int get_match(int rpm){
-  int pulse = 60*1000000L/200/rpm/2;
-  return 16000000.0/(1000000/(float)pulse*1024.0) - 1;
+  float pulse = 60.0*1000000.0/200.0/(float)rpm/2.0;
+  return (int) (16000000.0/(1000000.0/pulse*256.0) - 1.0);
 }
 
-void set_speed(int rpm){
+void start_run(int rpm){
   //stop interrupts
   cli();
-  // set entire TCCR1A register to 0
-  TCCR1A = 0;
-  // same for TCCR1B
-  TCCR1B = 0;
+  // set entire TCCR2A register to 0
+  TCCR2A = 0;
+  // same for TCCR2B
+  TCCR2B = 0;
   //initialize counter value to 0
-  TCNT1  = 0;
-  // set compare match register for 1hz increments
-  OCR1A = get_match(rpm);
+  TCNT2  = 0;
+  // match based on pulse length for given rpm
+  OCR2A = get_match(rpm);
   // turn on CTC mode
-  TCCR1B |= (1 << WGM12);
-  // Set CS12 and CS10 bits for 1024 prescaler
-  TCCR1B |= (1 << CS12) | (1 << CS10);  
+  TCCR2A |= (1 << WGM21);
+  // Set CS01 and CS00 bits for 64 prescaler
+  TCCR2B |= (1<<CS22) | (1<<CS21);
   // enable timer compare interrupt
-  TIMSK1 |= (1 << OCIE1A);
+  TIMSK2 |= (1 << OCIE2A);
   //start interrupts
   sei();
+
 }
 
-ISR(TIMER1_COMPA_vect)
+void stop_run(){
+  // Disable timer 2 compare interrupts
+  TIMSK2 &= (0 << OCIE2A);
+}
+
+void move_steps(int steps, int rpm){
+  // Enable pulse count checking
+  continuous = false;
+  // Reset pulse count
+  pulse_count = 0;
+  // Each step is two pulses
+  max_pulses = steps * 2;
+  //Start rotation
+  start_run(rpm);
+}
+
+void move_angle(int angle, int rpm){
+  // Number of steps is angle/360 times number of steps in one rotation
+  move_steps((int)((float)angle/360.0 * 200.0), rpm);
+}
+
+ISR(TIMER2_COMPA_vect)
 {
-  PORTB ^= B00000010;
+  // Flip pin 8 state
+  PORTB ^= B00000001;
+  // Increment total pulse count
+  pulse_count++;
+
+  // Only stop if not running in continuous mode
+  if(!continuous && pulse_count == max_pulses)
+  {
+    // Disable timer 2 compare interrupts
+    TIMSK2 &= (0 << OCIE2A);
+    // Reset to continuous mode
+    continuous = true;
+  }
 }
