@@ -2,23 +2,42 @@
 
 #define DIR 4
 #define STEP 8
+#define RST 7
+
+#define CLK 9
+#define DT 10
+
+int pos = 0;
+uint8_t last_state = 0;
+uint8_t state = 0;
 
 volatile int pulse_count = 0;
 volatile int max_pulses;
 volatile boolean continuous = false;
 
-uint8_t last_rpm = 0;
-uint8_t rpm = 0;
+int last_rpm = 0;
+int rpm = 0;
 
 void setup()
 {
-
+  // Stepper motor pins
+  pinMode(RST, OUTPUT);
   pinMode(DIR, OUTPUT);
   pinMode(STEP, OUTPUT);
+
+  // Rotary encoder pins
+  pinMode(CLK, INPUT);
+  pinMode(DT, INPUT);
+
+  // Reset stepper drivers
+  digitalWrite(RST, LOW);
+  delay(100);
+  digitalWrite(RST, HIGH);
   
+  // Set to forward motion
   digitalWrite(DIR, HIGH);
   
-  Wire.begin(9);                // join i2c bus with address #8
+  Wire.begin(9);                // join i2c bus with address #9
   Wire.onReceive(receiveEvent); // register event
   Wire.onRequest(requestEvent);
   
@@ -27,7 +46,16 @@ void setup()
 
 void loop()
 {
-  delay(100);
+  
+  state = PINB & _BV(PB1);
+  if (!last_state && state) {
+    if(PINB & _BV(PB2))
+      pos--;
+    else
+      pos++;
+   Serial.println(pos);
+ } 
+ last_state = state;
 }
 
 // function that executes whenever data is received from master
@@ -36,7 +64,8 @@ void receiveEvent(int howMany)
 {
   while (Wire.available()) // loop through all but the last
   {
-    rpm = Wire.read(); // receive byte as a character
+    
+    rpm = Wire.read() << 8 | Wire.read();
     if(rpm != last_rpm)
     {
       start_run(rpm);
@@ -48,16 +77,10 @@ void receiveEvent(int howMany)
 
 void requestEvent(void)
 {
-  int input = analogRead(A0);
-  if(input >= 1024)
-    input = 1023;
-  if(input <= 0)
-    input = 1;
-  uint8_t buffer[2];
-  buffer[0] = input >> 8;
-  buffer[1] = input & 0xff;
-  Wire.write(buffer, 2);
-
+  uint8_t buff[2];
+  buff[0] = pos >> 8;
+  buff[1] = pos & 0xff;
+  Wire.write(buff, 2);
 }
 
 int get_match(int rpm){
@@ -68,23 +91,29 @@ int get_match(int rpm){
 void start_run(int rpm){
   //stop interrupts
   cli();
-  // set entire TCCR2A register to 0
-  TCCR2A = 0;
-  // same for TCCR2B
-  TCCR2B = 0;
-  //initialize counter value to 0
-  TCNT2  = 0;
-  // match based on pulse length for given rpm
-  OCR2A = get_match(rpm);
-  // turn on CTC mode
-  TCCR2A |= (1 << WGM21);
-  // Set CS01 and CS00 bits for 64 prescaler
-  TCCR2B |= (1<<CS22) | (1<<CS21);
-  // enable timer compare interrupt
-  TIMSK2 |= (1 << OCIE2A);
+  // If stopping
+  if(rpm == 0)
+    stop_run();
+  // Otherwise set RPM
+  else
+  {
+    // set entire TCCR2A register to 0
+    TCCR2A = 0;
+    // same for TCCR2B
+    TCCR2B = 0;
+    //initialize counter value to 0
+    TCNT2  = 0;
+    // match based on pulse length for given rpm
+    OCR2A = get_match(rpm);
+    // turn on CTC mode
+    TCCR2A |= (1 << WGM21);
+    // Set CS01 and CS00 bits for 64 prescaler
+    TCCR2B |= (1<<CS22) | (1<<CS21);
+    // enable timer compare interrupt
+    TIMSK2 |= (1 << OCIE2A);
+  }
   //start interrupts
   sei();
-
 }
 
 void stop_run(){

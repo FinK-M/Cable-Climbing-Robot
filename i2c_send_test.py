@@ -1,27 +1,36 @@
+
 from time import sleep
 from serial import Serial
 
-ser = Serial("COM3", baudrate=57600)
+ser = Serial("COM3", baudrate=57600, timeout=0.1)
+
+ser.write("RST:1".encode())
+sleep(2)
+ser.write("SER:250,INT:200,DIR:1,RUN:1".encode())
+
+i = 0
 while True:
-    for i in range(9):
-        ser.flush()
-        message = "LED:1{0},LED:2{1},SER:{2},ADC:8".format(i, i+1, 50+i*10)
-        ser.write(message.encode())
+    while ser.inWaiting():
         try:
-            available = 0
-            while available < 7:
-                available = ser.inWaiting()
-            line = ser.read(available).decode().rstrip("\r\n")
-            data = line.split(",")
-            if 0 < int(data[0]) < 1024:
-                print("POT:", data[0], "ACK:", data[1] == "ack")
+            raw = ser.readline()
+            line = raw.decode().rstrip("\r\n")
+
+            if line[0] == "v":
+                i += 1
+                data = line[1:].split(",")
+                if not i % 100:
+                    print(
+                        "Probe 1: {0} Probe 2: {1} Probe 3: {2}".format(*data))
+
+            elif line[0] == "s":
+                data = line[1:].split(",")
+                print(data[0], data[1])
+
+            elif line == "ack":
+                ser.write("SER:250,INT:200,DIR:1,RUN:1".encode())
+                break
             else:
-                print("invalid data: {0}".format(data))
+                print(line)
+
         except:
-            print("failed")
-            ser.write("RST:1,".encode())
-            ser.close()
-            sleep(1)
-            ser.open()
-            sleep(1)
-        sleep(0.5)
+            print("error", raw)

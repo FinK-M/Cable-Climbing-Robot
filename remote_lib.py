@@ -19,8 +19,8 @@ def adc_string(address=8):
     return "ADC:{0},".format(address)
 
 
-def servo_string(pos):
-    return "SER:{0},".format(pos)
+def servo_string(rpm, run=1):
+    return "SER:{0},RUN:{1}".format(rpm, run)
 
 
 def get_input():
@@ -47,9 +47,10 @@ def get_input():
     elif option == 4:
         send("RST:1,")
 
-while True:
-    try:
-        get_input()
-        sleep(0.5)
-    except KeyboardInterrupt:
-        break
+if __name__ == "__main__":
+    while True:
+        try:
+            get_input()
+            sleep(0.5)
+        except KeyboardInterrupt:
+            break
