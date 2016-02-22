@@ -19,8 +19,8 @@ char* led_state;
 char* adc_msg;
 int send_number = 0;
 
-volatile unsigned long pulse_count = 0;
-volatile unsigned long max_pulses;
+volatile long pulse_count = 0;
+volatile long max_pulses;
 volatile bool continuous = false;
 
 volatile long stepper_position = 0;
@@ -34,7 +34,7 @@ volatile int analogVal0;
 volatile int analogVal1;
 volatile int analogVal2;
 
-void setup() {
+void setup(){
 
 
   // Serial 1 is for Xbee Module
@@ -49,10 +49,71 @@ void setup() {
   setup_adc();
 }
 
+void loop(){
+  if(ready_flag)
+  {
+    // Set motor direction
+    digitalWrite(DIR, dir);
+    /*
+    if(dir)
+      PORTG |= _BV(7);
+    else
+      PORTG &= ~_BV(7);
+    */
+    // Set micro-step divisions
+    set_microstep(microsteps);
+    // Start timer interrupts to drive stepper
+    start_run(servo_value);
+    for(int i = 0; i < send_number; i++)
+    {
+      delay(3);
+      if(i % 50 == 0)
+      {
+        // Every 50 lines send a status report
+        Serial1.print("sSP:");
+        Serial1.print(stepper_position);
+        Serial1.print(",EP:");
+        Serial1.print(encoder_position);
+        Serial1.print(",MS:");
+        Serial1.println(microsteps);
+      }
+      // Send three analogue readings in CSV format
+      Serial1.print("v");
+      Serial1.print(analogVal0);
+      Serial1.print(",");
+      Serial1.print(analogVal1);
+      Serial1.print(",");
+      Serial1.println(analogVal2);
+      
+    }
+    // Stop timer interrupts
+    stop_run();
+    // Send final status report
+    delay(3);
+    Serial1.print("sSP:");
+    Serial1.print(stepper_position);
+    Serial1.print(",EP:");
+    Serial1.print(encoder_position);
+    Serial1.print(",MS:");
+    Serial1.println(microsteps);
+    // Confirm end of data transmission
+    Serial1.println("ack");
+    // Prevents stepper drivers suddenly drawing high current + overheating
+    stepper_reset();
+
+    ready_flag = false;
+  }
+  else
+  {
+    stop_run();
+    last_servo_value = 0;
+  }
+}
+
 void setup_adc(){
   // clear ADLAR in ADMUX to right-adjust the result
   // ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits)
-  ADMUX &= B11011111;
+  ADMUX &= ~_BV(ADLAR); //B11011111;
   // Set REFS1..0 in ADMUX to change reference voltage to VCC
   ADMUX |= B01000000;  
   // Clear MUX3..0 in ADMUX
@@ -111,61 +172,6 @@ void set_microstep(uint8_t scale){
   PORTB &= B11111000;
   PORTB |= val;
   Serial1.println(val);
-}
-
-void loop(){
-  if(ready_flag)
-  {
-    // Set motor direction
-    digitalWrite(DIR, dir);
-    // Set micro-step divisions
-    set_microstep(microsteps);
-    // Start timer interrupts to drive stepper
-    start_run(servo_value);
-    for(int i = 0; i < send_number; i++)
-    {
-      delay(3);
-      if(i % 50 == 0)
-      {
-        // Every 50 lines send a status report
-        Serial1.print("sSP:");
-        Serial1.print(stepper_position);
-        Serial1.print(",EP:");
-        Serial1.print(encoder_position);
-        Serial1.print(",MS:");
-        Serial1.println(microsteps);
-      }
-      // Send three analogue readings in CSV format
-      Serial1.print("v");
-      Serial1.print(analogVal0);
-      Serial1.print(",");
-      Serial1.print(analogVal1);
-      Serial1.print(",");
-      Serial1.println(analogVal2);
-      
-    }
-    // Stop timer interrupts
-    stop_run();
-    // Send final status report
-    delay(3);
-    Serial1.print("sSP:");
-    Serial1.print(stepper_position);
-    Serial1.print(",EP:");
-    Serial1.print(encoder_position);
-    Serial1.print(",MS:");
-    Serial1.println(microsteps);
-    // Confirm end of data transmission
-    Serial1.println("ack");
-    // Prevents stepper drivers suddenly drawing high current + overheating
-    stepper_reset();
-
-    ready_flag = false;
-  }
-  else
-  {
-    stop_run();
-    last_servo_value = 0;
-  }
 }
 
 void serialEvent1(){
@@ -254,11 +260,11 @@ void start_run(int rpm){
     // match based on pulse length for given rpm
     OCR2A = get_match(rpm);
     // turn on CTC mode
-    TCCR2A |= (1 << WGM21);
+    TCCR2A |= _BV(WGM21);
     // Set CS01 and CS00 bits for 64 prescaler
-    TCCR2B |= (1<<CS22) | (1<<CS21);
+    TCCR2B |= _BV(CS22) | _BV(CS21);
     // enable timer compare interrupt
-    TIMSK2 |= (1 << OCIE2A);
+    TIMSK2 |= _BV(OCIE2A);
   }
   //start interrupts
   sei();
@@ -266,7 +272,7 @@ void start_run(int rpm){
 
 void stop_run(){
   // Disable timer 2 compare interrupts
-  TIMSK2 &= (0 << OCIE2A);
+  TIMSK2 &= ~_BV(OCIE2A);
   //
 }
 
@@ -307,7 +313,7 @@ ISR(TIMER2_COMPA_vect){
   if(!continuous && pulse_count == max_pulses)
   {
     // Disable timer 2 compare interrupts
-    TIMSK2 &= (0 << OCIE2A);
+    TIMSK2 &= ~_BV(OCIE2A);
     // Reset to continuous mode
     continuous = true;
   }

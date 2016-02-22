@@ -1,17 +1,20 @@
 import sys
 import threading
 from serial import Serial
-from PyQt4 import QtGui
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 
 
-class Example(QtGui.QMainWindow):
+class Example(QMainWindow):
 
     def __init__(self):
         super(Example, self).__init__()
         self.ser = Serial("COM3", baudrate=57600, timeout=0.1)
+        self.ser.flush()
 
         self.microsteps = 2
-        self.rpm = 60
+        self.rpm = 120
         self.intervals = 200
         self.direction = 1
         self.runs = 4
@@ -22,40 +25,66 @@ class Example(QtGui.QMainWindow):
 
     def initUI(self):
 
+        ui_path = "C:/icons/PNG/32/User_Interface/"
+        ch_path = "C:/icons/PNG/32/Computer_Hardware/"
+
+        palette = QPalette()
+        palette.setColor(QPalette.Background, QColor(218, 223, 225))
+        self.setPalette(palette)
+
+        self.reverse_check = QCheckBox("Reverse", self)
+        self.reverse_check.move(280, 40)
+        self.reverse_check.stateChanged.connect(self.change_direction)
+
         # Create combobox
-        mstep_choice = QtGui.QComboBox(self)
-        mstep_choice.addItem("2")
-        mstep_choice.addItem("4")
-        mstep_choice.move(20, 20)
-        mstep_choice.activated[str].connect(self.mstep_set)
+        self.mstep_choice = QComboBox(self)
+        self.mstep_choice.addItems(("2", "4"))
+        self.mstep_choice.move(20, 40)
+        self.mstep_choice.activated[str].connect(self.mstep_set)
 
-        int_choice = QtGui.QComboBox(self)
-        int_choice.addItem("100")
-        int_choice.addItem("200")
-        int_choice.addItem("400")
-        int_choice.move(150, 20)
-        int_choice.activated[str].connect(self.int_set)
+        self.int_choice = QComboBox(self)
+        self.int_choice.addItems(("100", "200", "400"))
+        self.int_choice.move(150, 40)
+        self.int_choice.activated[str].connect(self.int_set)
 
-        btn1 = QtGui.QPushButton("Run", self)
-        btn1.move(20, 70)
+        self.run_btn = QPushButton("Run", self)
+        self.run_btn.move(20, 90)
+        # self.run_btn.setGraphicsEffect(self.shadow)
 
-        btn2 = QtGui.QPushButton("Stop", self)
-        btn2.move(150, 70)
+        self.stop_btn = QPushButton("Stop", self)
+        self.stop_btn.setDisabled(True)
+        self.stop_btn.move(150, 90)
 
-        self.lcd = QtGui.QLCDNumber(self)
-        self.lcd.move(280, 70)
+        self.lcd = QLCDNumber(self)
+        self.lcd.move(280, 90)
 
-        btn1.clicked.connect(self.run)
-        btn2.clicked.connect(self.stop)
+        self.run_btn.clicked.connect(self.run)
+        self.stop_btn.clicked.connect(self.stop)
 
         self.statusBar()
 
-        self.setGeometry(300, 300, 500, 150)
+        openFile = QAction(QIcon(ui_path + "save-32.png"), 'Save data', self)
+        openFile.setShortcut('Ctrl+S')
+        openFile.setStatusTip('Save data')
+        openFile.triggered.connect(self.showDialog)
+
+        exitAction = QAction(QIcon(ch_path + "shutdown-32.png"), 'Exit', self)
+        exitAction.setShortcut('Ctrl+Q')
+        openFile.setStatusTip('Quit')
+        exitAction.triggered.connect(qApp.quit)
+
+        self.toolbar = self.addToolBar("Commands")
+        self.toolbar.addAction(exitAction)
+        self.toolbar.addAction(openFile)
+
+        self.setGeometry(300, 300, 500, 200)
         self.setWindowTitle('Robot Control')
         self.show()
 
     def run(self):
         self.running = True
+        self.run_btn.setDisabled(True)
+        self.stop_btn.setDisabled(False)
         threading.Thread(target=self.run_commands).start()
         self.statusBar().showMessage("Running")
 
@@ -64,7 +93,6 @@ class Example(QtGui.QMainWindow):
 
     def run_commands(self):
 
-        
         self.ser.write("MIC:{0},SER:{1},INT:{2},DIR:{3},RUN:1".format(
             self.microsteps, self.rpm,
             self.intervals, self.direction).encode())
@@ -90,7 +118,7 @@ class Example(QtGui.QMainWindow):
 
                     elif line == "ack":
                         i += 1
-                        print("ack")
+                        # print("ack")
                         self.ser.write(
                             "MIC:{0},SER:{1},INT:{2},DIR:{3},RUN:1".format(
                                 self.microsteps, self.rpm, self.intervals,
@@ -104,6 +132,8 @@ class Example(QtGui.QMainWindow):
             if not self.running:
                 break
         self.statusBar().showMessage("Done")
+        self.run_btn.setDisabled(False)
+        self.stop_btn.setDisabled(True)
 
     def mstep_set(self, text):
         self.microsteps = int(text)
@@ -111,10 +141,16 @@ class Example(QtGui.QMainWindow):
     def int_set(self, text):
         self.intervals = int(text)
 
+    def change_direction(self, state):
+        self.direction = 0 if state == Qt.Checked else 1
+
+    def showDialog(self):
+        fname = QFileDialog.getOpenFileName(self, 'Save File', 'data.csv')
+
 
 def main():
 
-    app = QtGui.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     ex = Example()
     sys.exit(app.exec_())
 
