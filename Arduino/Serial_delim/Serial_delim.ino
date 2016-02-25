@@ -10,6 +10,7 @@
 unsigned long last_time = 0;
 
 bool ready_flag = false;
+bool jog_mode = false;
 int dir = 1;
 
 char* servo_msg;
@@ -36,7 +37,6 @@ volatile int analogVal2;
 
 void setup(){
 
-
   // Serial 1 is for Xbee Module
   Serial1.begin(57600);
   // Must set short timeout otherwise will hang when reading data
@@ -54,48 +54,36 @@ void loop(){
   {
     // Set motor direction
     digitalWrite(DIR, dir);
-    /*
-    if(dir)
-      PORTG |= _BV(7);
-    else
-      PORTG &= ~_BV(7);
-    */
     // Set micro-step divisions
     set_microstep(microsteps);
     // Start timer interrupts to drive stepper
     start_run(servo_value);
+
+    bool msg_flg;
     for(int i = 0; i < send_number; i++)
     {
       delay(3);
+      msg_flg = false;
+      // Send three analogue readings in CSV format
+      cli();
+      print_sensor_data();
       if(i % 50 == 0)
       {
         // Every 50 lines send a status report
-        Serial1.print("sSP:");
-        Serial1.print(stepper_position);
-        Serial1.print(",EP:");
-        Serial1.print(encoder_position);
-        Serial1.print(",MS:");
-        Serial1.println(microsteps);
+        print_status_report();
+        msg_flg = true;
       }
-      // Send three analogue readings in CSV format
-      Serial1.print("v");
-      Serial1.print(analogVal0);
-      Serial1.print(",");
-      Serial1.print(analogVal1);
-      Serial1.print(",");
-      Serial1.println(analogVal2);
+      sei();
       
     }
     // Stop timer interrupts
     stop_run();
     // Send final status report
-    delay(3);
-    Serial1.print("sSP:");
-    Serial1.print(stepper_position);
-    Serial1.print(",EP:");
-    Serial1.print(encoder_position);
-    Serial1.print(",MS:");
-    Serial1.println(microsteps);
+    if(msg_flg == false)
+    {
+      delay(3);
+      print_status_report();
+    }
     // Confirm end of data transmission
     Serial1.println("ack");
     // Prevents stepper drivers suddenly drawing high current + overheating
@@ -108,6 +96,26 @@ void loop(){
     stop_run();
     last_servo_value = 0;
   }
+}
+
+void print_sensor_data(){
+  Serial1.print("v");
+  Serial1.print(stepper_position);
+  Serial1.print(",");
+  Serial1.print(analogVal0);
+  Serial1.print(",");
+  Serial1.print(analogVal1);
+  Serial1.print(",");
+  Serial1.println(analogVal2);
+}
+
+void print_status_report(){
+  Serial1.print("sSP:");
+  Serial1.print(stepper_position);
+  Serial1.print(",EP:");
+  Serial1.print(encoder_position);
+  Serial1.print(",MS:");
+  Serial1.println(microsteps);
 }
 
 void setup_adc(){
@@ -159,19 +167,19 @@ void setup_microstep(uint8_t scale){
 }
 
 void set_microstep(uint8_t scale){
-  /*
-  mapping for scale to val
-  1 -> 0 = Full Step
-  2 -> 1 = 1/2 Step
+  /**************************
+  mapping for scale to val 
+  1 -> 0 = Full step       
+  2 -> 1 = 1/2 Step        
   4 -> 2 = 1/4 Step
   8 -> 3 = 1/8 Step
   16 -> 4 = 1/16 Step
   32 -> 5 = 1/32 Step
-  */
+  **************************/
+
   uint8_t val = (uint8_t) (log(scale) / log(2));
   PORTB &= B11111000;
   PORTB |= val;
-  Serial1.println(val);
 }
 
 void serialEvent1(){
@@ -220,7 +228,6 @@ void serialEvent1(){
         else if(strcmp(ident, "SER") == 0){
           servo_msg = ident;
           servo_value = atoi(value);
-          //send(value, UNO_1_ADR, "int");
         }
         else if(strcmp(ident, "MIC") == 0){
           microsteps = atoi(value);
@@ -228,7 +235,7 @@ void serialEvent1(){
         
         else if(strcmp(ident, "RST") == 0){
             pinMode(24, OUTPUT);
-        }  
+        }
       }
       // Find the next command in input string
       command = strtok(0, ",");

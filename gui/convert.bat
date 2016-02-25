@@ -1,0 +1,1 @@
+pyuic5 -o robot_gui_ui.py robot_gui.ui
