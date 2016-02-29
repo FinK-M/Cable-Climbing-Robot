@@ -11,6 +11,9 @@ unsigned long last_time = 0;
 
 bool ready_flag = false;
 bool jog_mode = false;
+
+unsigned long last_msg_time = 0;
+
 int dir = 1;
 
 char* servo_msg;
@@ -37,20 +40,21 @@ volatile int analogVal2;
 
 void setup(){
 
+  setup_stepper();
+  setup_microstep(microsteps);
+  setup_adc();
+
   // Serial 1 is for Xbee Module
   Serial1.begin(57600);
   // Must set short timeout otherwise will hang when reading data
   Serial1.setTimeout(5);
   // Debug Serial port setup
   Serial.begin(57600);
-  
-  setup_stepper();
-  setup_microstep(microsteps);
-  setup_adc();
 }
 
 void loop(){
-  if(ready_flag)
+
+  if(ready_flag && !jog_mode)
   {
     // Set motor direction
     digitalWrite(DIR, dir);
@@ -65,7 +69,6 @@ void loop(){
       delay(3);
       msg_flg = false;
       // Send three analogue readings in CSV format
-      cli();
       print_sensor_data();
       if(i % 50 == 0)
       {
@@ -73,7 +76,6 @@ void loop(){
         print_status_report();
         msg_flg = true;
       }
-      sei();
       
     }
     // Stop timer interrupts
@@ -91,10 +93,17 @@ void loop(){
 
     ready_flag = false;
   }
-  else
+  else if(!jog_mode)
   {
     stop_run();
     last_servo_value = 0;
+  }
+  else if(jog_mode){
+    // Status reporting with no readings every 50ms
+    if(millis() - last_msg_time > 50){
+      print_status_report();
+      last_msg_time = millis();
+    }
   }
 }
 
@@ -214,13 +223,58 @@ void serialEvent1(){
         if(strcmp(ident, "INT") == 0){
           send_number = atoi(value);
         }
-
+        else if(strcmp(ident, "JOG") == 0){
+          // First stop motor running
+          stop_run();
+          continuous = true;
+          // Disable jog mode
+          if(strcmp(value, "OFF") == 0){
+            jog_mode = false;
+            ADCSRA |= _BV(ADIE);
+            ADCSRA |= _BV(ADSC);
+          }
+          // Move down fast
+          else if (strcmp(value, "DF") == 0){
+            jog_mode = true;
+            servo_value = 200;
+            dir = 0;
+          }
+          // Move down slowly
+          else if (strcmp(value, "DS") == 0){
+            jog_mode = true;
+            servo_value = 100;
+            dir = 0;
+          }
+          // Move up slowly
+          else if (strcmp(value, "US") == 0){
+            jog_mode = true;
+            servo_value = 100;
+            dir = 1;
+          }
+          // Move up fast
+          else if (strcmp(value, "UF") == 0){
+            jog_mode = true;
+            servo_value = 200;
+            dir = 1;
+          }
+          if(jog_mode)
+          {
+            // Disable ADC interupts as not needed
+            ADCSRA &= ~_BV(ADIE);
+            digitalWrite(DIR, dir);
+            // Set micro-step divisions
+            set_microstep(microsteps);
+            // Start timer interrupts to drive stepper
+            start_run(servo_value);
+          }
+        }
         else if(strcmp(ident, "DIR") == 0){
           dir = atoi(value);
         }
 
         else if(strcmp(ident, "RUN") == 0){
           if(strcmp(value, "1") == 0){
+            jog_mode = false;
             ready_flag = true;
           }
         }
@@ -234,6 +288,8 @@ void serialEvent1(){
         }
         
         else if(strcmp(ident, "RST") == 0){
+            pinMode(25, OUTPUT);
+            delay(100);
             pinMode(24, OUTPUT);
         }
       }
@@ -274,6 +330,20 @@ void start_run(int rpm){
     TIMSK2 |= _BV(OCIE2A);
   }
   //start interrupts
+  start_counter();
+  sei();
+}
+
+void start_counter(){
+  // Global interrupt disable
+  cli();
+  TCCR5A = 0;
+  TCCR5B = 0;
+  TCNT5 = 0;
+  OCR5A = 100;
+  TCCR5A |= _BV(WGM51);
+  TCCR5B =  bit (CS52) | bit (CS51) | bit (CS50);
+  TIMSK5 |= _BV(OCIE5A);
   sei();
 }
 
@@ -324,6 +394,10 @@ ISR(TIMER2_COMPA_vect){
     // Reset to continuous mode
     continuous = true;
   }
+}
+
+ISR(TIMER5_COMPA_vect){
+  Serial.print("!");
 }
 
 // Interrupt service routine for the ADC completion

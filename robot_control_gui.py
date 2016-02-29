@@ -24,6 +24,7 @@ class robot_gui(Ui_MainWindow):
         self.max_runs = 2
         self.running = False
         self.position = 0
+        self.jog_mode = False
         self.probe_data = []
 
         self.obj = Worker()  # no parent!
@@ -67,8 +68,34 @@ class robot_gui(Ui_MainWindow):
     def link_buttons(self):
         self.link_speed_buttons()
         self.link_microstep_buttons()
+        self.link_jog_buttons()
         self.stop_run_button.clicked.connect(self.stop)
         self.start_run_button.clicked.connect(self.run)
+
+    def link_jog_buttons(self):
+        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("UF"))
+        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("US"))
+        self.jog_stop.clicked.connect(self.set_jog_stop)
+        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("DS"))
+        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("DF"))
+
+    @pyqtSlot()
+    def set_jog_speed(self, speed):
+        self.jog_mode = False
+        self.ser.write("MIC:{0},JOG:{1}".format(
+            self.microsteps, speed).encode())
+        self.jog_mode = True
+        threading.Thread(target=self.run_jog_mode).start()
+
+    @pyqtSlot()
+    def set_jog_stop(self):
+        self.jog_mode = False
+        self.ser.write("JOG:OFF".encode())
+        sleep(0.1)
+        self.ser.write("JOG:OFF".encode())
+        self.jog_stop.setAutoExclusive(False)
+        self.jog_stop.setChecked(False)
+        self.jog_stop.setAutoExclusive(True)
 
     def stop(self):
         self.running = False
@@ -124,24 +151,55 @@ class robot_gui(Ui_MainWindow):
         return command[0:-1].encode()
 
     def get_cleaned_line(self):
+        # Read bytes until EOL
         raw = self.ser.readline()
+        # Convert from bytes to string and remove EOL characters
         return raw.decode().rstrip("\r\n")
 
     def handle_sensor_data(self, line):
+        # Split line into individual readings ignoring indicator
         data = line[1:].split(",")
+        # Check data isn't blank
         if data:
+            # Add readings to dataset
             self.probe_data.append(data)
 
     def handle_status_message(self, line):
+        # First split string into individual messages
         data = line[1:].split(",")
-        position = (int(data[0][3:]) /
-                    (200 * self.microsteps))
+        # Get position in terms of rotations
+        position = (int(data[0][3:]) / (200 * self.microsteps))
+        # Update motor position QLCDNumber widget
         self.obj.position.emit(position)
+        # Check data isn't blank
         if self.probe_data:
+            # Append position to most recent readings
             self.probe_data[-1].append(self.position)
+
+    def run_jog_mode(self):
+        # Run until jog mode flag is set to False
+        while self.jog_mode:
+            # Try/Except statements as serial read can fail
+            try:
+                # Check for available data to read in
+                if self.ser.inWaiting():
+
+                    # Decode and strip EOL characters
+                    line = self.get_cleaned_line()
+                    # Indicates a robot status string
+                    if line[0] == "s":
+                        self.handle_status_message(line)
+                    # Any other string is invalid
+                    else:
+                        print("Invalid String: {0}".format(line))
+
+            # Debug print any failure in the above code
+            except Exception as e:
+                print("Exception: {0}".format(e))
 
     def run_commands(self):
 
+        # Generate a command string from set variables
         command = self.construct_command(
             MIC=self.microsteps,
             SER=self.rpm,
@@ -149,36 +207,52 @@ class robot_gui(Ui_MainWindow):
             DIR=self.direction,
             RUN=1)
 
+        # Start first run
         self.ser.write(command)
 
+        # Variable to keep track of how many runs have happened
         current_run = 0
-        try:
-            while self.running:
+
+        # Run until self.running flag is set to False
+        while self.running:
+            # Try/Except statements as serial read can fail
+            try:
+                # Check for available data to read in
                 if self.ser.inWaiting():
 
+                    # Decode and strip EOL characters
                     line = self.get_cleaned_line()
+                    # Get first character in string to indicate type
                     indicator = line[0]
 
+                    # Indicates a sensor data string
                     if indicator == "v":
                         self.handle_sensor_data(line)
 
+                    # Indicates a robot status string
                     elif indicator == "s":
                         self.handle_status_message(line)
 
+                    # Indicates completion of last command set
                     elif line == "ack":
+                        # Move to next run through commands
                         current_run += 1
+                        # Stop sending command strings if at max runs
                         if current_run == self.max_runs:
                             self.running = False
+                        # Send repeat command to keep running
                         else:
                             self.ser.write(command)
+                    # Debug output for invalid data string
                     else:
-                        print("err: {0}".format(line))
+                        print("Invalid String: {0}".format(line))
 
-        except Exception as e:
-            print("Exception: {0}".format(e))
+            # Debug print any failure in the above code
+            except Exception as e:
+                print("Exception: {0}".format(e))
 
+        # Update status bar to "Done" and enable/disable run/stop buttons
         self.obj.finished.emit()
-        
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
