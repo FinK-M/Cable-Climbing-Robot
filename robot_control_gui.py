@@ -168,7 +168,7 @@ class robot_gui(Ui_MainWindow):
         # First split string into individual messages
         data = line[1:].split(",")
         # Get position in terms of rotations
-        position = (int(data[0][3:]) / (200 * self.microsteps))
+        position = (int(data[0][3:]) / 200)
         # Update motor position QLCDNumber widget
         self.obj.position.emit(position)
         # Check data isn't blank
@@ -257,5 +257,4 @@ class robot_gui(Ui_MainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     ui = robot_gui()
-
     sys.exit(app.exec_())

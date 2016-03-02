@@ -1,13 +1,11 @@
 #define INPUT_SIZE 100
 
 #define DIR 42
-#define STEP 41
+#define STEP 6
 #define RST 40
 #define M0 51
 #define M1 52
 #define M2 53
-
-unsigned long last_time = 0;
 
 bool ready_flag = false;
 bool jog_mode = false;
@@ -16,11 +14,7 @@ unsigned long last_msg_time = 0;
 
 int dir = 1;
 
-char* servo_msg;
 int servo_value = 0;
-int last_servo_value;
-char* led_state;
-char* adc_msg;
 int send_number = 0;
 
 volatile long pulse_count = 0;
@@ -31,7 +25,7 @@ volatile long stepper_position = 0;
 volatile long encoder_position = 0;
 
 volatile uint8_t mux = 5;
-volatile uint8_t microsteps = 1;
+volatile uint8_t microsteps = 2;
 
 // Value to store analogue result
 volatile int analogVal0;
@@ -96,7 +90,6 @@ void loop(){
   else if(!jog_mode)
   {
     stop_run();
-    last_servo_value = 0;
   }
   else if(jog_mode){
     // Status reporting with no readings every 50ms
@@ -154,6 +147,7 @@ void setup_stepper(){
   pinMode(RST, OUTPUT);
   pinMode(DIR, OUTPUT);
   pinMode(STEP, OUTPUT);
+  pinMode(7, OUTPUT);
 
   // Reset stepper drivers
   stepper_reset();
@@ -280,7 +274,6 @@ void serialEvent1(){
         }
         // Send the servo position to the appropriate subsystem
         else if(strcmp(ident, "SER") == 0){
-          servo_msg = ident;
           servo_value = atoi(value);
         }
         else if(strcmp(ident, "MIC") == 0){
@@ -299,14 +292,9 @@ void serialEvent1(){
   }
 }
 
-int get_match(int rpm){
-  float pulse = 60.0*1000000.0/(200.0*microsteps)/(float)rpm/2.0;
-  return (int) (16000000.0/(1000000.0/pulse*256.0) - 1.0);
-}
-
 void start_run(int rpm){
 
-  //stop interrupts
+  // Global interrupt disable
   cli();
   // If stopping
   if(rpm == 0)
@@ -314,43 +302,65 @@ void start_run(int rpm){
   // Otherwise set RPM
   else
   {
-    // set entire TCCR2A register to 0
-    TCCR2A = 0;
-    // same for TCCR2B
-    TCCR2B = 0;
-    //initialize counter value to 0
-    TCNT2  = 0;
-    // match based on pulse length for given rpm
-    OCR2A = get_match(rpm);
-    // turn on CTC mode
-    TCCR2A |= _BV(WGM21);
-    // Set CS01 and CS00 bits for 64 prescaler
-    TCCR2B |= _BV(CS22) | _BV(CS21);
-    // enable timer compare interrupt
-    TIMSK2 |= _BV(OCIE2A);
+    // Set entire TCCR4A register to 0
+    TCCR4A = 0;
+    // Same for TCCR4B
+    TCCR4B = 0;
+    // Initialize counter value to 0
+    TCNT4  = 0;
+    // Get TOP value from desired rpm
+    OCR4A = get_ocrna(rpm);
+    // Turn on phase correct PWM mode
+    TCCR4A = _BV(COM4A0) | _BV(COM4B1) | _BV(WGM40);
+    // Set CS41 bit for 8 prescaler
+    TCCR4B = _BV(WGM43) | _BV(CS41);
   }
-  //start interrupts
+  // Starts pulse counter
   start_counter();
+  // Global interrupt enable
   sei();
+}
+
+int get_ocrna(int rpm){
+  // Frequency = rotations per second * motor steps * microstep resolution
+  float freq = ((float) rpm / 60.0) * 200.0 * (float) microsteps;
+  // OCR4A = clock / 2 / prescaler / desired frequency
+  float val = 500000.0 / freq;
+  // Convert to integer
+  return (int) val;
 }
 
 void start_counter(){
   // Global interrupt disable
   cli();
+  // Clear TCCR5A
   TCCR5A = 0;
+  // Clear TCCR5B
   TCCR5B = 0;
+  // Set inital count to 3 to compensate for trigger lag
   TCNT5 = 0;
+  // Set compare/match to 100
   OCR5A = 100;
-  TCCR5A |= _BV(WGM51);
-  TCCR5B =  bit (CS52) | bit (CS51) | bit (CS50);
+
+  // Enable CTC mode
+  TCCR5A |= _BV(WGM52);
+  // Set external clock source, rising edge
+  TCCR5B |= _BV(CS52) | _BV(CS51) | _BV(CS50);
+  // Timer/Countern Output Compare A Match interrupt enable
   TIMSK5 |= _BV(OCIE5A);
+  // Global interrupt enable
   sei();
 }
 
 void stop_run(){
-  // Disable timer 2 compare interrupts
-  TIMSK2 &= ~_BV(OCIE2A);
-  //
+  cli();
+  // Clear TCCR4A
+  TCCR4A = 0;
+  // same for TCCR4B
+  TCCR4B = 0;
+  //initialize counter value to 0
+  TCNT4  = 0;
+  sei();
 }
 
 void move_steps(int steps, int rpm){
@@ -372,32 +382,15 @@ void move_angle(int angle, int rpm){
   move_steps((int)((float)angle/360.0 * 200.0 * microsteps), rpm);
 }
 
-ISR(TIMER2_COMPA_vect){
-  // Flip pin 41 state
-  PORTG ^= B00000001;
-  // Increment total pulse count
-  
-
-  if(dir)
-    pulse_count++;
-  else
-    pulse_count--;
-
-  // Each step is two pulses
-  stepper_position = pulse_count / 2;
-
-  // Only stop if not running in continuous mode
-  if(!continuous && pulse_count == max_pulses)
-  {
-    // Disable timer 2 compare interrupts
-    TIMSK2 &= ~_BV(OCIE2A);
-    // Reset to continuous mode
-    continuous = true;
-  }
-}
-
 ISR(TIMER5_COMPA_vect){
-  Serial.print("!");
+  // Reset counter
+  TCNT5 = 0;
+  // If moving upwards
+  if(dir)
+    stepper_position += 100 / microsteps;
+  // If moving downwards
+  else
+    stepper_position -= 100 / microsteps;
 }
 
 // Interrupt service routine for the ADC completion
@@ -407,22 +400,20 @@ ISR(ADC_vect){
   if(mux == 5){
     analogVal0 = ADCL | (ADCH << 8);
     // Read pin A6 next
-    mux++;
+    mux = 6;
   }
   else if(mux == 6){
     analogVal1 = ADCL | (ADCH << 8);
     // Read pin A7 next
-    mux++;
+    mux = 7;
   }
   else if(mux == 7){
     analogVal2 = ADCL | (ADCH << 8);
     // Read pin A5 next
     mux = 5;
   }
-  // Clear ADC selection Mux
-  ADMUX &= B11110000;
-  // Set Mux to new value
-  ADMUX |= mux;
+  // Clear ADC selection and set new value
+  ADMUX = B11110000 | mux;
   // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
   ADCSRA |= _BV(ADSC);
 }
