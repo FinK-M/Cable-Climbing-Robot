@@ -1,5 +1,6 @@
 import sys
 import threading
+import csv
 from serial import Serial
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
@@ -21,7 +22,7 @@ class robot_gui(Ui_MainWindow):
         self.rpm = 100
         self.intervals = 200
         self.direction = 1
-        self.max_runs = 2
+        self.max_runs = 10
         self.running = False
         self.position = 0
         self.jog_mode = False
@@ -34,19 +35,35 @@ class robot_gui(Ui_MainWindow):
         self.ui = Ui_MainWindow()
         self.setupUi(self)
         self.setup_xbee()
-        self.ser.write("RST:0,".encode())
-        self.statusBar().showMessage("Resetting Arduino")
-        sleep(1)
-        self.statusBar().showMessage("Ready")
         self.link_buttons()
+        self.ser.flush()
+        self.ser.write("RST:0,".encode())
+        self.statusBar().showMessage("Ready")
 
     def update_lcd(self, i):
+        if 0 <= i < 10:
+            self.motor_pos_lcd.setDigitCount(3)
+        elif -10 < i < 0 or i >= 10:
+            self.motor_pos_lcd.setDigitCount(4)
+        elif i <= -10 or i >= 100:
+            self.motor_pos_lcd.setDigitCount(5)
+        elif i <= -100 or i >= 1000:
+            self.motor_pos_lcd.setDigitCount(6)
+
         self.motor_pos_lcd.display(i)
 
     def status_bar_done(self):
         self.statusBar().showMessage("Done")
         self.start_run_button.setDisabled(False)
         self.stop_run_button.setDisabled(True)
+
+    def showDialog(self):
+        fname = QFileDialog.getSaveFileName(self, 'Save File', 'data.csv')
+        with open(fname[0], "w", newline='') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(("Position", "A0", "A1", "A2"))
+            for row in self.probe_data:
+                csvwriter.writerow(row)
 
     def setup_xbee(self):
 
@@ -71,6 +88,8 @@ class robot_gui(Ui_MainWindow):
         self.link_jog_buttons()
         self.stop_run_button.clicked.connect(self.stop)
         self.start_run_button.clicked.connect(self.run)
+        self.pushButton.clicked.connect(self.zero)
+        self.pushButton_2.clicked.connect(self.showDialog)
 
     def link_jog_buttons(self):
         self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("UF"))
@@ -107,6 +126,21 @@ class robot_gui(Ui_MainWindow):
         self.statusBar().showMessage("Running")
         threading.Thread(target=self.run_commands).start()
 
+    def zero(self):
+        self.ser.write("ZER:0".encode())
+        while not self.ser.inWaiting():
+            sleep(0.001)
+
+        line = ""
+        while "SP:0" not in line:
+            try:
+                line = self.get_cleaned_line()
+                print(line)
+            except:
+                pass
+        print(line)
+        self.handle_status_message(line)
+
     def link_speed_buttons(self):
         self.speed_50.pressed.connect(lambda: self.set_speed(self.speed_50))
         self.speed_100.pressed.connect(lambda: self.set_speed(self.speed_100))
@@ -124,24 +158,10 @@ class robot_gui(Ui_MainWindow):
             lambda: self.set_microsteps(self.microstep_8))
 
     def set_speed(self, b):
-        if "50" in b.text():
-            self.rpm = 50
-        if "100" in b.text():
-            self.rpm = 100
-        if "150" in b.text():
-            self.rpm = 150
-        if "200" in b.text():
-            self.rpm = 200
+        self.rpm = int(b.text()[:3])
 
     def set_microsteps(self, b):
-        if "1" in b.text():
-            self.microsteps = 1
-        elif "2" in b.text():
-            self.microsteps = 2
-        elif "4" in b.text():
-            self.microsteps = 4
-        elif "8" in b.text():
-            self.microsteps = 8
+        self.microsteps = int(b.text()[0])
 
     def construct_command(self, **kwargs):
         # Start with empty string
@@ -159,6 +179,10 @@ class robot_gui(Ui_MainWindow):
     def handle_sensor_data(self, line):
         # Split line into individual readings ignoring indicator
         data = line[1:].split(",")
+        # Get position in terms of rotations
+        self.position = (int(data[0]) / 200)
+        # Update motor position QLCDNumber widget
+        self.obj.position.emit(self.position)
         # Check data isn't blank
         if data:
             # Add readings to dataset
@@ -168,13 +192,15 @@ class robot_gui(Ui_MainWindow):
         # First split string into individual messages
         data = line[1:].split(",")
         # Get position in terms of rotations
-        position = (int(data[0][3:]) / 200)
+        self.position = (int(data[0][3:]) / 200)
         # Update motor position QLCDNumber widget
-        self.obj.position.emit(position)
+        self.obj.position.emit(self.position)
         # Check data isn't blank
+        """
         if self.probe_data:
             # Append position to most recent readings
             self.probe_data[-1].append(self.position)
+        """
 
     def run_jog_mode(self):
         # Run until jog mode flag is set to False
@@ -197,6 +223,19 @@ class robot_gui(Ui_MainWindow):
             except Exception as e:
                 print("Exception: {0}".format(e))
 
+        # Wait for any remaining serial data
+        sleep(0.1)
+        # Handle last few status messages
+        while self.ser.inWaiting():
+            try:
+                # Decode and strip EOL characters
+                line = self.get_cleaned_line()
+                # Indicates a robot status string
+                if line[0] == "s":
+                    self.handle_status_message(line)
+            except:
+                pass
+
     def run_commands(self):
 
         # Generate a command string from set variables
@@ -212,6 +251,9 @@ class robot_gui(Ui_MainWindow):
 
         # Variable to keep track of how many runs have happened
         current_run = 0
+
+        # Keep track if end stop hit
+        end_hit = False
 
         # Run until self.running flag is set to False
         while self.running:
@@ -236,13 +278,16 @@ class robot_gui(Ui_MainWindow):
                     # Indicates completion of last command set
                     elif line == "ack":
                         # Move to next run through commands
-                        current_run += 1
+                        # current_run += 1
                         # Stop sending command strings if at max runs
-                        if current_run == self.max_runs:
+                        if current_run == self.max_runs or end_hit:
                             self.running = False
                         # Send repeat command to keep running
                         else:
                             self.ser.write(command)
+                    elif line == "END":
+                        end_hit = True
+                        print("ending")
                     # Debug output for invalid data string
                     else:
                         print("Invalid String: {0}".format(line))

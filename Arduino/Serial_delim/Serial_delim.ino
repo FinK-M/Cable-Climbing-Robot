@@ -22,6 +22,7 @@ volatile long max_pulses;
 volatile bool continuous = false;
 
 volatile long stepper_position = 0;
+volatile long last_stepper_position = 0;
 volatile long encoder_position = 0;
 
 volatile uint8_t mux = 5;
@@ -33,6 +34,8 @@ volatile int analogVal1;
 volatile int analogVal2;
 
 void setup(){
+
+  attachInterrupt(digitalPinToInterrupt(2), end_stop, RISING);
 
   setup_stepper();
   setup_microstep(microsteps);
@@ -48,32 +51,38 @@ void setup(){
 
 void loop(){
 
-  if(ready_flag && !jog_mode)
-  {
+  if(ready_flag && !jog_mode){
     // Set motor direction
     digitalWrite(DIR, dir);
     // Set micro-step divisions
     set_microstep(microsteps);
     // Start timer interrupts to drive stepper
-    start_run(servo_value);
+    start_stepper(servo_value);
 
     bool msg_flg;
     for(int i = 0; i < send_number; i++)
     {
-      delay(3);
-      msg_flg = false;
-      // Send three analogue readings in CSV format
-      print_sensor_data();
-      if(i % 50 == 0)
-      {
-        // Every 50 lines send a status report
-        print_status_report();
-        msg_flg = true;
+      if(ready_flag){
+        delay(3);
+        msg_flg = false;
+        
+        // Send three analogue readings in CSV format
+        print_sensor_data();
+        if(i % 50 == 0)
+        {
+          // Every 50 lines send a status report
+          print_status_report();
+          msg_flg = true;
+        }
       }
-      
+      else{
+        // Confirm endstop hit
+        Serial1.println("END");
+        break;
+      }
     }
     // Stop timer interrupts
-    stop_run();
+    stop_stepper();
     // Send final status report
     if(msg_flg == false)
     {
@@ -87,22 +96,23 @@ void loop(){
 
     ready_flag = false;
   }
-  else if(!jog_mode)
-  {
-    stop_run();
+  else if(!jog_mode){
+    stop_stepper();
   }
   else if(jog_mode){
-    // Status reporting with no readings every 50ms
-    if(millis() - last_msg_time > 50){
-      print_status_report();
-      last_msg_time = millis();
-    }
+    delay(10);
+    print_status_report();
   }
 }
 
 void print_sensor_data(){
+  long pos;
+  if(dir)
+    pos = stepper_position + (TCNT5 / microsteps);
+  else
+    pos = stepper_position - (TCNT5 / microsteps);
   Serial1.print("v");
-  Serial1.print(stepper_position);
+  Serial1.print(pos);
   Serial1.print(",");
   Serial1.print(analogVal0);
   Serial1.print(",");
@@ -112,8 +122,13 @@ void print_sensor_data(){
 }
 
 void print_status_report(){
+  long pos = 0;
+  if(dir)
+    pos = stepper_position + (TCNT5 / microsteps);
+  else
+    pos = stepper_position - (TCNT5 / microsteps);
   Serial1.print("sSP:");
-  Serial1.print(stepper_position);
+  Serial1.print(pos);
   Serial1.print(",EP:");
   Serial1.print(encoder_position);
   Serial1.print(",MS:");
@@ -121,6 +136,7 @@ void print_status_report(){
 }
 
 void setup_adc(){
+  cli();
   // clear ADLAR in ADMUX to right-adjust the result
   // ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits)
   ADMUX &= ~_BV(ADLAR); //B11011111;
@@ -187,8 +203,7 @@ void set_microstep(uint8_t scale){
 
 void serialEvent1(){
 
-  if(Serial1.available())
-  {
+  if(Serial1.available()){
     // Get next command from Serial (add 1 for final 0)
     char input[INPUT_SIZE + 1];
     byte size = Serial1.readBytes(input, INPUT_SIZE);
@@ -219,7 +234,7 @@ void serialEvent1(){
         }
         else if(strcmp(ident, "JOG") == 0){
           // First stop motor running
-          stop_run();
+          stop_stepper();
           continuous = true;
           // Disable jog mode
           if(strcmp(value, "OFF") == 0){
@@ -230,25 +245,25 @@ void serialEvent1(){
           // Move down fast
           else if (strcmp(value, "DF") == 0){
             jog_mode = true;
-            servo_value = 200;
+            servo_value = 100;
             dir = 0;
           }
           // Move down slowly
           else if (strcmp(value, "DS") == 0){
             jog_mode = true;
-            servo_value = 100;
+            servo_value = 50;
             dir = 0;
           }
           // Move up slowly
           else if (strcmp(value, "US") == 0){
             jog_mode = true;
-            servo_value = 100;
+            servo_value = 50;
             dir = 1;
           }
           // Move up fast
           else if (strcmp(value, "UF") == 0){
             jog_mode = true;
-            servo_value = 200;
+            servo_value = 100;
             dir = 1;
           }
           if(jog_mode)
@@ -259,7 +274,7 @@ void serialEvent1(){
             // Set micro-step divisions
             set_microstep(microsteps);
             // Start timer interrupts to drive stepper
-            start_run(servo_value);
+            start_stepper(servo_value);
           }
         }
         else if(strcmp(ident, "DIR") == 0){
@@ -279,7 +294,13 @@ void serialEvent1(){
         else if(strcmp(ident, "MIC") == 0){
           microsteps = atoi(value);
         }
-        
+        else if(strcmp(ident, "ZER") == 0){
+          stepper_position = 0;
+          last_stepper_position = 0;
+          encoder_position = 0;
+          TCNT5 = 0;
+          print_status_report();
+        }
         else if(strcmp(ident, "RST") == 0){
             pinMode(25, OUTPUT);
             delay(100);
@@ -292,13 +313,14 @@ void serialEvent1(){
   }
 }
 
-void start_run(int rpm){
-
+void start_stepper(int rpm){
+  // 
+  stepper_position += TCNT5 / microsteps;
   // Global interrupt disable
   cli();
   // If stopping
   if(rpm == 0)
-    stop_run();
+    stop_stepper();
   // Otherwise set RPM
   else
   {
@@ -316,7 +338,7 @@ void start_run(int rpm){
     TCCR4B = _BV(WGM43) | _BV(CS41);
   }
   // Starts pulse counter
-  start_counter();
+  start_counter(100);
   // Global interrupt enable
   sei();
 }
@@ -330,17 +352,17 @@ int get_ocrna(int rpm){
   return (int) val;
 }
 
-void start_counter(){
+void start_counter(int compare){
   // Global interrupt disable
   cli();
   // Clear TCCR5A
   TCCR5A = 0;
   // Clear TCCR5B
   TCCR5B = 0;
-  // Set inital count to 3 to compensate for trigger lag
+  // Set inital count to 0
   TCNT5 = 0;
   // Set compare/match to 100
-  OCR5A = 100;
+  OCR5A = compare;
 
   // Enable CTC mode
   TCCR5A |= _BV(WGM52);
@@ -352,7 +374,7 @@ void start_counter(){
   sei();
 }
 
-void stop_run(){
+void stop_stepper(){
   cli();
   // Clear TCCR4A
   TCCR4A = 0;
@@ -371,7 +393,7 @@ void move_steps(int steps, int rpm){
   // Each step is two pulses
   max_pulses = steps * 2;
   //Start rotation
-  start_run(rpm);
+  start_stepper(rpm);
   int x = 0;
   while(pulse_count < max_pulses)
     x = x;
@@ -412,8 +434,21 @@ ISR(ADC_vect){
     // Read pin A5 next
     mux = 5;
   }
-  // Clear ADC selection and set new value
-  ADMUX = B11110000 | mux;
+  // Clear ADC input selection
+  ADMUX &= B11111000;
+  // Set new ADC input
+  ADMUX |= mux;
   // Set ADSC in ADCSRA (0x7A) to start another ADC conversion
   ADCSRA |= _BV(ADSC);
+}
+
+// If the robot has hit something
+void end_stop(){
+  stop_stepper();
+  ready_flag = false;
+  if(jog_mode){
+    jog_mode = false;
+    ADCSRA |= _BV(ADIE);
+    ADCSRA |= _BV(ADSC);
+  }
 }
