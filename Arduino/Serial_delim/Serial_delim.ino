@@ -7,8 +7,8 @@
 #define M1 52
 #define M2 53
 
-bool ready_flag = false;
-bool jog_mode = false;
+volatile bool ready_flag = false;
+volatile bool jog_mode = false;
 
 unsigned long last_msg_time = 0;
 
@@ -22,8 +22,8 @@ volatile long max_pulses;
 volatile bool continuous = false;
 
 volatile long stepper_position = 0;
-volatile long last_stepper_position = 0;
 volatile long encoder_position = 0;
+long pos = 0;
 
 volatile uint8_t mux = 5;
 volatile uint8_t microsteps = 2;
@@ -63,9 +63,7 @@ void loop(){
     for(int i = 0; i < send_number; i++)
     {
       if(ready_flag){
-        delay(3);
         msg_flg = false;
-        
         // Send three analogue readings in CSV format
         print_sensor_data();
         if(i % 50 == 0)
@@ -74,6 +72,7 @@ void loop(){
           print_status_report();
           msg_flg = true;
         }
+        delay(5);
       }
       else{
         // Confirm endstop hit
@@ -106,7 +105,7 @@ void loop(){
 }
 
 void print_sensor_data(){
-  long pos;
+  long pos = 0;
   if(dir)
     pos = stepper_position + (TCNT5 / microsteps);
   else
@@ -296,7 +295,6 @@ void serialEvent1(){
         }
         else if(strcmp(ident, "ZER") == 0){
           stepper_position = 0;
-          last_stepper_position = 0;
           encoder_position = 0;
           TCNT5 = 0;
           print_status_report();
@@ -366,8 +364,8 @@ void start_counter(int compare){
 
   // Enable CTC mode
   TCCR5A |= _BV(WGM52);
-  // Set external clock source, rising edge
-  TCCR5B |= _BV(CS52) | _BV(CS51) | _BV(CS50);
+  // Set external clock source, falling edge
+  TCCR5B |= _BV(CS52) | _BV(CS51);
   // Timer/Countern Output Compare A Match interrupt enable
   TIMSK5 |= _BV(OCIE5A);
   // Global interrupt enable

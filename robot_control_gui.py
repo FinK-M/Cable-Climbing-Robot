@@ -5,7 +5,7 @@ from serial import Serial
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from gui.robot_gui_ui import Ui_MainWindow
-from time import sleep
+from time import sleep, time
 
 
 class Worker(QObject):
@@ -27,6 +27,7 @@ class robot_gui(Ui_MainWindow):
         self.position = 0
         self.jog_mode = False
         self.probe_data = []
+        self.errors = 0
 
         self.obj = Worker()  # no parent!
         self.obj.finished.connect(self.status_bar_done)
@@ -42,13 +43,13 @@ class robot_gui(Ui_MainWindow):
 
     def update_lcd(self, i):
         if 0 <= i < 10:
-            self.motor_pos_lcd.setDigitCount(3)
-        elif -10 < i < 0 or i >= 10:
             self.motor_pos_lcd.setDigitCount(4)
-        elif i <= -10 or i >= 100:
+        elif -10 < i < 0 or i >= 10:
             self.motor_pos_lcd.setDigitCount(5)
-        elif i <= -100 or i >= 1000:
+        elif i <= -10 or i >= 100:
             self.motor_pos_lcd.setDigitCount(6)
+        elif i <= -100 or i >= 1000:
+            self.motor_pos_lcd.setDigitCount(7)
 
         self.motor_pos_lcd.display(i)
 
@@ -184,9 +185,11 @@ class robot_gui(Ui_MainWindow):
         # Update motor position QLCDNumber widget
         self.obj.position.emit(self.position)
         # Check data isn't blank
-        if data:
+        if len(data) == 4:
             # Add readings to dataset
             self.probe_data.append(data)
+        else:
+            self.errors += 1
 
     def handle_status_message(self, line):
         # First split string into individual messages
@@ -196,11 +199,6 @@ class robot_gui(Ui_MainWindow):
         # Update motor position QLCDNumber widget
         self.obj.position.emit(self.position)
         # Check data isn't blank
-        """
-        if self.probe_data:
-            # Append position to most recent readings
-            self.probe_data[-1].append(self.position)
-        """
 
     def run_jog_mode(self):
         # Run until jog mode flag is set to False
@@ -221,6 +219,7 @@ class robot_gui(Ui_MainWindow):
 
             # Debug print any failure in the above code
             except Exception as e:
+                self.errors += 1
                 print("Exception: {0}".format(e))
 
         # Wait for any remaining serial data
@@ -234,10 +233,12 @@ class robot_gui(Ui_MainWindow):
                 if line[0] == "s":
                     self.handle_status_message(line)
             except:
+                self.errors += 1
                 pass
 
     def run_commands(self):
 
+        start_time = time()
         # Generate a command string from set variables
         command = self.construct_command(
             MIC=self.microsteps,
@@ -287,17 +288,22 @@ class robot_gui(Ui_MainWindow):
                             self.ser.write(command)
                     elif line == "END":
                         end_hit = True
-                        print("ending")
                     # Debug output for invalid data string
                     else:
+                        self.errors += 1
                         print("Invalid String: {0}".format(line))
 
             # Debug print any failure in the above code
             except Exception as e:
+                self.errors += 1
                 print("Exception: {0}".format(e))
 
         # Update status bar to "Done" and enable/disable run/stop buttons
         self.obj.finished.emit()
+        print("Error rate: {0}%".format(
+            self.errors/len(self.probe_data) * 100))
+        print("Frequncy: {0}Hz".format(
+            len(self.probe_data)/(time()-start_time)))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
