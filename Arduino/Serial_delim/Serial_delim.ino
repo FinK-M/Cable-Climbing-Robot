@@ -27,6 +27,7 @@ long pos = 0;
 
 volatile uint8_t mux = 5;
 volatile uint8_t microsteps = 2;
+uint8_t temp = 0;
 
 // Value to store analogue result
 volatile int analogVal0;
@@ -47,6 +48,8 @@ void setup(){
   Serial1.setTimeout(5);
   // Debug Serial port setup
   Serial.begin(57600);
+
+  DDRA &= B11110000;
 }
 
 void loop(){
@@ -105,6 +108,10 @@ void loop(){
 }
 
 void print_sensor_data(){
+  temp = PINA & B00001111;
+  temp ^= temp >> 4;
+  temp ^= temp >> 2;
+  temp ^= temp >> 1;
   long pos = 0;
   if(dir)
     pos = stepper_position + (TCNT5 / microsteps);
@@ -113,11 +120,14 @@ void print_sensor_data(){
   Serial1.print("v");
   Serial1.print(pos);
   Serial1.print(",");
+  Serial1.print(temp);
+  Serial1.print(",");
   Serial1.print(analogVal0);
   Serial1.print(",");
   Serial1.print(analogVal1);
   Serial1.print(",");
   Serial1.println(analogVal2);
+ 
 }
 
 void print_status_report(){
@@ -300,9 +310,9 @@ void serialEvent1(){
           print_status_report();
         }
         else if(strcmp(ident, "RST") == 0){
-            pinMode(25, OUTPUT);
+            pinMode(27, OUTPUT);
             delay(100);
-            pinMode(24, OUTPUT);
+            pinMode(26, OUTPUT);
         }
       }
       // Find the next command in input string

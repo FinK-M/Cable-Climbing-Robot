@@ -185,7 +185,7 @@ class robot_gui(Ui_MainWindow):
         # Update motor position QLCDNumber widget
         self.obj.position.emit(self.position)
         # Check data isn't blank
-        if len(data) == 4:
+        if len(data) == 5:
             # Add readings to dataset
             self.probe_data.append(data)
         else:
