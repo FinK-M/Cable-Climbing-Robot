@@ -190,7 +190,7 @@ void stepper_reset(){
 }
 
 void setup_microstep(uint8_t scale){
-  DDRB |= 7;
+  DDRA |= B11100000;
   set_microstep(scale);
 }
 
@@ -206,8 +206,10 @@ void set_microstep(uint8_t scale){
   **************************/
 
   uint8_t val = (uint8_t) (log(scale) / log(2));
-  PORTB &= B11111000;
-  PORTB |= val;
+  PORTA &= B00011111;
+  PORTA |= val << 5;
+  Serial.print(microsteps);
+  Serial.println(val);
 }
 
 void serialEvent1(){
@@ -254,25 +256,25 @@ void serialEvent1(){
           // Move down fast
           else if (strcmp(value, "DF") == 0){
             jog_mode = true;
-            servo_value = 100;
+            servo_value = 250;
             dir = 0;
           }
           // Move down slowly
           else if (strcmp(value, "DS") == 0){
             jog_mode = true;
-            servo_value = 50;
+            servo_value = 125;
             dir = 0;
           }
           // Move up slowly
           else if (strcmp(value, "US") == 0){
             jog_mode = true;
-            servo_value = 50;
+            servo_value = 125;
             dir = 1;
           }
           // Move up fast
           else if (strcmp(value, "UF") == 0){
             jog_mode = true;
-            servo_value = 100;
+            servo_value = 250;
             dir = 1;
           }
           if(jog_mode)
@@ -310,9 +312,10 @@ void serialEvent1(){
           print_status_report();
         }
         else if(strcmp(ident, "RST") == 0){
-            pinMode(27, OUTPUT);
-            delay(100);
             pinMode(26, OUTPUT);
+            delay(100);
+            pinMode(26, INPUT);
+            pinMode(A15, OUTPUT);
         }
       }
       // Find the next command in input string
@@ -357,6 +360,7 @@ int get_ocrna(int rpm){
   // OCR4A = clock / 2 / prescaler / desired frequency
   float val = 500000.0 / freq;
   // Convert to integer
+  Serial.println(freq);
   return (int) val;
 }
 
