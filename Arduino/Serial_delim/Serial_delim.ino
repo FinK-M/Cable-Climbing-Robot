@@ -246,37 +246,29 @@ void serialEvent1(){
         else if(strcmp(ident, "JOG") == 0){
           // First stop motor running
           stop_stepper();
+          // Run until stopped by user
           continuous = true;
+          // Get jog speed
+          int servo_value = atoi(value);
           // Disable jog mode
-          if(strcmp(value, "OFF") == 0){
+          if(servo_value == 0){
             jog_mode = false;
             ADCSRA |= _BV(ADIE);
             ADCSRA |= _BV(ADSC);
           }
-          // Move down fast
-          else if (strcmp(value, "DF") == 0){
+          // Jog upwards
+          else if(servo_value > 0){
             jog_mode = true;
-            servo_value = 250;
-            dir = 0;
-          }
-          // Move down slowly
-          else if (strcmp(value, "DS") == 0){
-            jog_mode = true;
-            servo_value = 125;
-            dir = 0;
-          }
-          // Move up slowly
-          else if (strcmp(value, "US") == 0){
-            jog_mode = true;
-            servo_value = 125;
             dir = 1;
           }
-          // Move up fast
-          else if (strcmp(value, "UF") == 0){
+          // Jog downwards
+          else if(servo_value < 0){
+            // Servo value must always be positive
+            servo_value = -servo_value;
             jog_mode = true;
-            servo_value = 250;
-            dir = 1;
+            dir = 0;
           }
+
           if(jog_mode)
           {
             // Disable ADC interupts as not needed
@@ -325,6 +317,7 @@ void serialEvent1(){
 }
 
 void start_stepper(int rpm){
+  int TOP = 0;
   // 
   stepper_position += TCNT5 / microsteps;
   // Global interrupt disable
@@ -342,7 +335,7 @@ void start_stepper(int rpm){
     // Initialize counter value to 0
     TCNT4  = 0;
     // Get TOP value from desired rpm
-    OCR4A = get_ocrna(rpm);
+    TOP = get_ocrna(rpm);
     // Turn on phase correct PWM mode
     TCCR4A = _BV(COM4A0) | _BV(COM4B1) | _BV(WGM40);
     // Set CS41 bit for 8 prescaler
@@ -352,6 +345,11 @@ void start_stepper(int rpm){
   start_counter(100);
   // Global interrupt enable
   sei();
+  for(int temp = 0; temp < rpm; temp += rpm/100){
+    OCR4A = get_ocrna(temp);
+    delay(10);
+  }
+  OCR4A = get_ocrna(rpm);
 }
 
 int get_ocrna(int rpm){

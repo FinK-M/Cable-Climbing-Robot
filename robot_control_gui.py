@@ -93,11 +93,11 @@ class robot_gui(Ui_MainWindow):
         self.pushButton_2.clicked.connect(self.showDialog)
 
     def link_jog_buttons(self):
-        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("UF"))
-        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("US"))
+        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("2000"))
+        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("125"))
         self.jog_stop.clicked.connect(self.set_jog_stop)
-        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("DS"))
-        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("DF"))
+        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-125"))
+        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-250"))
 
     @pyqtSlot()
     def set_jog_speed(self, speed):
@@ -110,9 +110,9 @@ class robot_gui(Ui_MainWindow):
     @pyqtSlot()
     def set_jog_stop(self):
         self.jog_mode = False
-        self.ser.write("JOG:OFF".encode())
+        self.ser.write("JOG:0".encode())
         sleep(0.1)
-        self.ser.write("JOG:OFF".encode())
+        self.ser.write("JOG:0".encode())
         self.jog_stop.setAutoExclusive(False)
         self.jog_stop.setChecked(False)
         self.jog_stop.setAutoExclusive(True)
