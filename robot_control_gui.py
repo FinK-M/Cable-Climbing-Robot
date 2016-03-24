@@ -20,7 +20,7 @@ class robot_gui(Ui_MainWindow):
 
         self.microsteps = 2
         self.rpm = 100
-        self.intervals = 200
+        self.intervals = 500
         self.direction = 1
         self.max_runs = 10
         self.running = False
@@ -62,7 +62,7 @@ class robot_gui(Ui_MainWindow):
         fname = QFileDialog.getSaveFileName(self, 'Save File', 'data.csv')
         with open(fname[0], "w", newline='') as csvfile:
             csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(("Position", "A0", "A1", "A2"))
+            csvwriter.writerow(("Position", "Encoder", "A0", "A1", "A2"))
             for row in self.probe_data:
                 csvwriter.writerow(row)
 
@@ -93,11 +93,11 @@ class robot_gui(Ui_MainWindow):
         self.pushButton_2.clicked.connect(self.showDialog)
 
     def link_jog_buttons(self):
-        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("2000"))
-        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("125"))
+        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("1000"))
+        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("300"))
         self.jog_stop.clicked.connect(self.set_jog_stop)
-        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-125"))
-        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-250"))
+        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-300"))
+        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-1000"))
 
     @pyqtSlot()
     def set_jog_speed(self, speed):

@@ -9,11 +9,13 @@
 
 volatile bool ready_flag = false;
 volatile bool jog_mode = false;
+volatile bool stopped = true;
 
 unsigned long last_msg_time = 0;
 
 int dir = 1;
 
+int stop_value = 0;
 int servo_value = 0;
 int send_number = 0;
 
@@ -55,6 +57,8 @@ void setup(){
 void loop(){
 
   if(ready_flag && !jog_mode){
+    //set stopped flag false
+    stopped = false;
     // Set motor direction
     digitalWrite(DIR, dir);
     // Set micro-step divisions
@@ -98,12 +102,15 @@ void loop(){
 
     ready_flag = false;
   }
-  else if(!jog_mode){
+  else if(!jog_mode && !stopped){
     stop_stepper();
+    stopped = true;
+    Serial.print("stopping");
   }
   else if(jog_mode){
     delay(10);
     print_status_report();
+    stopped = false;
   }
 }
 
@@ -245,13 +252,15 @@ void serialEvent1(){
         }
         else if(strcmp(ident, "JOG") == 0){
           // First stop motor running
-          stop_stepper();
+          if(!stopped)
+            stop_stepper();
           // Run until stopped by user
           continuous = true;
           // Get jog speed
           int servo_value = atoi(value);
           // Disable jog mode
           if(servo_value == 0){
+            stopped = true;
             jog_mode = false;
             ADCSRA |= _BV(ADIE);
             ADCSRA |= _BV(ADSC);
@@ -317,7 +326,7 @@ void serialEvent1(){
 }
 
 void start_stepper(int rpm){
-  int TOP = 0;
+  stop_value = rpm;
   // 
   stepper_position += TCNT5 / microsteps;
   // Global interrupt disable
@@ -334,8 +343,6 @@ void start_stepper(int rpm){
     TCCR4B = 0;
     // Initialize counter value to 0
     TCNT4  = 0;
-    // Get TOP value from desired rpm
-    TOP = get_ocrna(rpm);
     // Turn on phase correct PWM mode
     TCCR4A = _BV(COM4A0) | _BV(COM4B1) | _BV(WGM40);
     // Set CS41 bit for 8 prescaler
@@ -345,9 +352,13 @@ void start_stepper(int rpm){
   start_counter(100);
   // Global interrupt enable
   sei();
-  for(int temp = 0; temp < rpm; temp += rpm/100){
+  for(int temp = 20; temp < rpm; temp += rpm/100){
     OCR4A = get_ocrna(temp);
-    delay(10);
+        if(jog_mode)
+      print_status_report();
+    else
+      print_sensor_data();
+    delay(5);
   }
   OCR4A = get_ocrna(rpm);
 }
@@ -385,6 +396,17 @@ void start_counter(int compare){
 }
 
 void stop_stepper(){
+
+
+  for(int temp = stop_value; temp > 20; temp -= stop_value/100){
+    OCR4A = get_ocrna(temp);
+    if(jog_mode)
+      print_status_report();
+    else
+      print_sensor_data();
+    delay(5);
+  }
+  OCR4A = 0;
   cli();
   // Clear TCCR4A
   TCCR4A = 0;
