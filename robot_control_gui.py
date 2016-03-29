@@ -93,11 +93,11 @@ class robot_gui(Ui_MainWindow):
         self.pushButton_2.clicked.connect(self.showDialog)
 
     def link_jog_buttons(self):
-        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("1000"))
-        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("300"))
+        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("1500"))
+        self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("100"))
         self.jog_stop.clicked.connect(self.set_jog_stop)
-        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-300"))
-        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-1000"))
+        self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-100"))
+        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-1500"))
 
     @pyqtSlot()
     def set_jog_speed(self, speed):
@@ -109,13 +109,13 @@ class robot_gui(Ui_MainWindow):
 
     @pyqtSlot()
     def set_jog_stop(self):
-        self.jog_mode = False
         self.ser.write("JOG:0".encode())
         sleep(0.1)
         self.ser.write("JOG:0".encode())
         self.jog_stop.setAutoExclusive(False)
         self.jog_stop.setChecked(False)
         self.jog_stop.setAutoExclusive(True)
+        self.jog_mode = False
 
     def stop(self):
         self.running = False
@@ -222,19 +222,7 @@ class robot_gui(Ui_MainWindow):
                 self.errors += 1
                 print("Exception: {0}".format(e))
 
-        # Wait for any remaining serial data
-        sleep(0.1)
-        # Handle last few status messages
-        while self.ser.inWaiting():
-            try:
-                # Decode and strip EOL characters
-                line = self.get_cleaned_line()
-                # Indicates a robot status string
-                if line[0] == "s":
-                    self.handle_status_message(line)
-            except:
-                self.errors += 1
-                pass
+        self.handle_end_data()
 
     def run_commands(self):
 
@@ -297,13 +285,34 @@ class robot_gui(Ui_MainWindow):
             except Exception as e:
                 self.errors += 1
                 print("Exception: {0}".format(e))
-
+                # Wait for any remaining serial data
+        self.handle_end_data()
         # Update status bar to "Done" and enable/disable run/stop buttons
         self.obj.finished.emit()
         print("Error rate: {0}%".format(
             self.errors/len(self.probe_data) * 100))
         print("Frequncy: {0}Hz".format(
             len(self.probe_data)/(time()-start_time)))
+
+    def handle_end_data(self):
+        # Wait for any remaining serial data
+        sleep(0.1)
+        # Handle last few status messages
+        while self.ser.inWaiting():
+            try:
+                # Decode and strip EOL characters
+                line = self.get_cleaned_line()
+                # Indicates a robot status string
+                if line[0] == "v":
+                    self.handle_sensor_data(line)
+                # Indicates a robot status string
+                elif line[0] == "s":
+                    self.handle_status_message(line)
+            except:
+                self.errors += 1
+                print(self.errors)
+                pass
+            sleep(0.005)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

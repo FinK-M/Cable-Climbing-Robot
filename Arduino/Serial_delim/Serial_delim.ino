@@ -11,17 +11,11 @@ volatile bool ready_flag = false;
 volatile bool jog_mode = false;
 volatile bool stopped = true;
 
-unsigned long last_msg_time = 0;
-
 int dir = 1;
 
 int stop_value = 0;
 int servo_value = 0;
 int send_number = 0;
-
-volatile long pulse_count = 0;
-volatile long max_pulses;
-volatile bool continuous = false;
 
 volatile long stepper_position = 0;
 volatile long encoder_position = 0;
@@ -31,7 +25,7 @@ volatile uint8_t mux = 5;
 volatile uint8_t microsteps = 2;
 uint8_t temp = 0;
 
-// Value to store analogue result
+// Value to store analogue results
 volatile int analogVal0;
 volatile int analogVal1;
 volatile int analogVal2;
@@ -105,7 +99,7 @@ void loop(){
   else if(!jog_mode && !stopped){
     stop_stepper();
     stopped = true;
-    Serial.print("stopping");
+    Serial.println("stopping");
   }
   else if(jog_mode){
     delay(10);
@@ -124,17 +118,13 @@ void print_sensor_data(){
     pos = stepper_position + (TCNT5 / microsteps);
   else
     pos = stepper_position - (TCNT5 / microsteps);
-  Serial1.print("v");
-  Serial1.print(pos);
-  Serial1.print(",");
-  Serial1.print(temp);
-  Serial1.print(",");
-  Serial1.print(analogVal0);
-  Serial1.print(",");
-  Serial1.print(analogVal1);
-  Serial1.print(",");
-  Serial1.println(analogVal2);
- 
+  
+  // Create blank message string
+  char s_data [30];
+  // Format positional and sensor data into message string
+  sprintf(s_data, "v%ld,%ld,%d,%d,%d", pos, temp, analogVal0, analogVal1, analogVal2);
+  // Print message string
+  Serial1.println(s_data);
 }
 
 void print_status_report(){
@@ -143,12 +133,13 @@ void print_status_report(){
     pos = stepper_position + (TCNT5 / microsteps);
   else
     pos = stepper_position - (TCNT5 / microsteps);
-  Serial1.print("sSP:");
-  Serial1.print(pos);
-  Serial1.print(",EP:");
-  Serial1.print(encoder_position);
-  Serial1.print(",MS:");
-  Serial1.println(microsteps);
+
+  // Create blank message string
+  char s_report [30];
+  // Format positional and micro step into message string
+  sprintf(s_report, "sSP:%ld,EP:%ld,MS:%d", pos, encoder_position, microsteps);
+  // Print message string
+  Serial1.println(s_report);
 }
 
 void setup_adc(){
@@ -254,8 +245,6 @@ void serialEvent1(){
           // First stop motor running
           if(!stopped)
             stop_stepper();
-          // Run until stopped by user
-          continuous = true;
           // Get jog speed
           int servo_value = atoi(value);
           // Disable jog mode
@@ -326,17 +315,20 @@ void serialEvent1(){
 }
 
 void start_stepper(int rpm){
-  stop_value = rpm;
-  // 
-  stepper_position += TCNT5 / microsteps;
   // Global interrupt disable
   cli();
+  // remember value to decelerate from
+  stop_value = rpm;
+  // Update stepper position
+  stepper_position += TCNT5 / microsteps;
   // If stopping
-  if(rpm == 0)
+  if(rpm == 0){
     stop_stepper();
+    // Global interrupt enable
+    sei();
+  }
   // Otherwise set RPM
-  else
-  {
+  else{
     // Set entire TCCR4A register to 0
     TCCR4A = 0;
     // Same for TCCR4B
@@ -345,13 +337,20 @@ void start_stepper(int rpm){
     TCNT4  = 0;
     // Turn on phase correct PWM mode
     TCCR4A = _BV(COM4A0) | _BV(COM4B1) | _BV(WGM40);
-    // Set CS41 bit for 8 prescaler
-    TCCR4B = _BV(WGM43) | _BV(CS41);
+    // Set CS40 bit for no pre-scaler
+    TCCR4B = _BV(WGM43) | _BV(CS40);
+    // Starts pulse counter
+    start_counter(100);
+    // Global interrupt enable
+    sei();
+    // Accelerate to max speed
+    accelerate_stepper(rpm);
   }
-  // Starts pulse counter
-  start_counter(100);
-  // Global interrupt enable
-  sei();
+  
+  
+}
+
+void accelerate_stepper(int rpm){
   for(int temp = 20; temp < rpm; temp += rpm/100){
     OCR4A = get_ocrna(temp);
         if(jog_mode)
@@ -367,7 +366,7 @@ int get_ocrna(int rpm){
   // Frequency = rotations per second * motor steps * microstep resolution
   float freq = ((float) rpm / 60.0) * 200.0 * (float) microsteps;
   // OCR4A = clock / 2 / prescaler / desired frequency
-  float val = 500000.0 / freq;
+  float val = 8000000L / freq;
   // Convert to integer
   Serial.println(freq);
   return (int) val;
@@ -396,8 +395,25 @@ void start_counter(int compare){
 }
 
 void stop_stepper(){
+  // Slow to a halt
+  decelerate_stepper(stop_value);
+  // Global Interrupt Disable
+  cli();
+  // Clear TCCR4A
+  TCCR4A = 0;
+  // same for TCCR4B
+  TCCR4B = 0;
+  //initialize counter value to 0
+  TCNT4  = 0;
+  // Global Interrupt Enable
+  sei();
+  if(jog_mode)
+    print_status_report();
+  else
+    print_sensor_data();
+}
 
-
+void decelerate_stepper(int stop_value){
   for(int temp = stop_value; temp > 20; temp -= stop_value/100){
     OCR4A = get_ocrna(temp);
     if(jog_mode)
@@ -407,33 +423,6 @@ void stop_stepper(){
     delay(5);
   }
   OCR4A = 0;
-  cli();
-  // Clear TCCR4A
-  TCCR4A = 0;
-  // same for TCCR4B
-  TCCR4B = 0;
-  //initialize counter value to 0
-  TCNT4  = 0;
-  sei();
-}
-
-void move_steps(int steps, int rpm){
-  // Enable pulse count checking
-  continuous = false;
-  // Reset pulse count
-  pulse_count = 0;
-  // Each step is two pulses
-  max_pulses = steps * 2;
-  //Start rotation
-  start_stepper(rpm);
-  int x = 0;
-  while(pulse_count < max_pulses)
-    x = x;
-}
-
-void move_angle(int angle, int rpm){
-  // Number of steps is angle/360 times number of steps in one rotation
-  move_steps((int)((float)angle/360.0 * 200.0 * microsteps), rpm);
 }
 
 ISR(TIMER5_COMPA_vect){
