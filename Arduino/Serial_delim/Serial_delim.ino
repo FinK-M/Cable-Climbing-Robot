@@ -46,11 +46,35 @@ void setup(){
   Serial.begin(57600);
 
   DDRA &= B11110000;
+
+  // Clear any waiting commands
+  Serial.flush();
+  Serial1.flush();
+
+  // Reset Xbee
+  pinMode(26, OUTPUT);
+  delay(100);
+  pinMode(26, INPUT);
 }
 
 void loop(){
 
   if(ready_flag && !jog_mode){
+    run_data_aquisition();
+  }
+  else if(!jog_mode && !stopped){
+    stop_stepper();
+    stopped = true;
+    Serial.println("stopping");
+  }
+  else if(jog_mode){
+    delay(10);
+    print_status_report();
+    stopped = false;
+  }
+}
+
+void run_data_aquisition(void){
     //set stopped flag false
     stopped = false;
     // Set motor direction
@@ -95,17 +119,6 @@ void loop(){
     stepper_reset();
 
     ready_flag = false;
-  }
-  else if(!jog_mode && !stopped){
-    stop_stepper();
-    stopped = true;
-    Serial.println("stopping");
-  }
-  else if(jog_mode){
-    delay(10);
-    print_status_report();
-    stopped = false;
-  }
 }
 
 void print_sensor_data(){
@@ -122,7 +135,7 @@ void print_sensor_data(){
   // Create blank message string
   char s_data [30];
   // Format positional and sensor data into message string
-  sprintf(s_data, "v%ld,%ld,%d,%d,%d", pos, temp, analogVal0, analogVal1, analogVal2);
+  sprintf(s_data, "v%ld,%d,%d,%d,%d", pos, temp, analogVal0, analogVal1, analogVal2);
   // Print message string
   Serial1.println(s_data);
 }
@@ -143,26 +156,26 @@ void print_status_report(){
 }
 
 void setup_adc(){
+  // Global Interupt Disable
   cli();
-  // clear ADLAR in ADMUX to right-adjust the result
-  // ADCL will contain lower 8 bits, ADCH upper 2 (in last two bits)
-  ADMUX &= ~_BV(ADLAR); //B11011111;
-  // Set REFS1..0 in ADMUX to change reference voltage to VCC
-  ADMUX |= B01000000;  
-  // Clear MUX3..0 in ADMUX
-  ADMUX &= B11110000;
-  // Set ADC input to value stored in mux, default 5
-  ADMUX |= mux;
-  // Set ADEN in ADCSRA (0x7A) to enable the ADC.
-  ADCSRA |= _BV(ADEN);
-  // Set the Prescaler to 128 (16000KHz/128 = 125KHz)
-  ADCSRA |= B00000111;
-  // Set ADIE in ADCSRA (0x7A) to enable the ADC interrupt.
-  ADCSRA |= _BV(ADIE);
-  // Enable global interrupts
+
+  // Clear ADMUX
+  ADMUX = 0;
+  // Clear ADCSRA
+  ADCSRA = 0;
+
+  // Set ADMUX input to value stored in mux, default 5
+  // Set REFS0 to change reference voltage to VCC
+  ADMUX = mux | _BV(REFS0);
+  
+  // Set ADEN to enable the ADC
+  // Set ADIE to enable the ADC interrupt
+  // Set ADSC to start the ADC conversion
+  // Set ADPS2:0 for prescaler of 128
+  ADCSRA = _BV(ADEN) | _BV(ADIE) | _BV(ADSC) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+
+  // Global Interupt Enable
   sei();
-  // Set ADSC in ADCSRA (0x7A) to start the ADC conversion
-  ADCSRA |= _BV(ADSC);
 }
 
 void setup_stepper(){
@@ -243,8 +256,10 @@ void serialEvent1(){
         }
         else if(strcmp(ident, "JOG") == 0){
           // First stop motor running
-          if(!stopped)
+          if(!stopped){
             stop_stepper();
+            stopped = true;
+          }
           // Get jog speed
           int servo_value = atoi(value);
           // Disable jog mode
@@ -323,6 +338,8 @@ void start_stepper(int rpm){
   stepper_position += TCNT5 / microsteps;
   // If stopping
   if(rpm == 0){
+    Serial.println("Stopping because 0");
+
     stop_stepper();
     // Global interrupt enable
     sei();
@@ -334,9 +351,9 @@ void start_stepper(int rpm){
     // Same for TCCR4B
     TCCR4B = 0;
     // Initialize counter value to 0
-    TCNT4  = 0;
+    TCNT4 = 0;
     // Turn on phase correct PWM mode
-    TCCR4A = _BV(COM4A0) | _BV(COM4B1) | _BV(WGM40);
+    TCCR4A = _BV(COM4A0) | _BV(WGM40);
     // Set CS40 bit for no pre-scaler
     TCCR4B = _BV(WGM43) | _BV(CS40);
     // Starts pulse counter
@@ -346,8 +363,6 @@ void start_stepper(int rpm){
     // Accelerate to max speed
     accelerate_stepper(rpm);
   }
-  
-  
 }
 
 void accelerate_stepper(int rpm){
