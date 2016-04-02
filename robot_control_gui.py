@@ -230,7 +230,7 @@ class robot_gui(Ui_MainWindow):
         # Generate a command string from set variables
         command = self.construct_command(
             MIC=self.microsteps,
-            SER=self.rpm,
+            STP=self.rpm,
             INT=self.intervals,
             DIR=self.direction,
             RUN=1)

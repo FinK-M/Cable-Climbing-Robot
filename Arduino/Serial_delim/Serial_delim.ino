@@ -14,7 +14,7 @@ volatile bool stopped = true;
 int dir = 1;
 
 int stop_value = 0;
-int servo_value = 0;
+int stepper_value = 0;
 int send_number = 0;
 
 volatile long stepper_position = 0;
@@ -82,7 +82,7 @@ void run_data_aquisition(void){
     // Set micro-step divisions
     set_microstep(microsteps);
     // Start timer interrupts to drive stepper
-    start_stepper(servo_value);
+    start_stepper(stepper_value);
 
     bool msg_flg;
     for(int i = 0; i < send_number; i++)
@@ -261,23 +261,23 @@ void serialEvent1(){
             stopped = true;
           }
           // Get jog speed
-          int servo_value = atoi(value);
+          int stepper_value = atoi(value);
           // Disable jog mode
-          if(servo_value == 0){
+          if(stepper_value == 0){
             stopped = true;
             jog_mode = false;
             ADCSRA |= _BV(ADIE);
             ADCSRA |= _BV(ADSC);
           }
           // Jog upwards
-          else if(servo_value > 0){
+          else if(stepper_value > 0){
             jog_mode = true;
             dir = 1;
           }
           // Jog downwards
-          else if(servo_value < 0){
+          else if(stepper_value < 0){
             // Servo value must always be positive
-            servo_value = -servo_value;
+            stepper_value = -stepper_value;
             jog_mode = true;
             dir = 0;
           }
@@ -290,7 +290,7 @@ void serialEvent1(){
             // Set micro-step divisions
             set_microstep(microsteps);
             // Start timer interrupts to drive stepper
-            start_stepper(servo_value);
+            start_stepper(stepper_value);
           }
         }
         else if(strcmp(ident, "DIR") == 0){
@@ -304,8 +304,8 @@ void serialEvent1(){
           }
         }
         // Send the servo position to the appropriate subsystem
-        else if(strcmp(ident, "SER") == 0){
-          servo_value = atoi(value);
+        else if(strcmp(ident, "STP") == 0){
+          stepper_value = atoi(value);
         }
         else if(strcmp(ident, "MIC") == 0){
           microsteps = atoi(value);
