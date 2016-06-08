@@ -317,10 +317,18 @@ void serialEvent1(){
           print_status_report();
         }
         else if(strcmp(ident, "RST") == 0){
-            pinMode(26, OUTPUT);
-            delay(100);
-            pinMode(26, INPUT);
-            pinMode(A15, OUTPUT);
+          pinMode(26, OUTPUT);
+          delay(100);
+          pinMode(26, INPUT);
+          pinMode(A15, OUTPUT);
+        }
+        if(strcmp(ident, "INIT") == 0){
+          // Create blank message string
+          char s_report [30];
+          // Format positional and micro step into message string
+          sprintf(s_report, "sSP:%ld,EP:%ld,MS:%d", pos, encoder_position, microsteps);
+          // Print message string
+          Serial1.println(s_report);
         }
       }
       // Find the next command in input string

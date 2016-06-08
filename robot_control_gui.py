@@ -93,11 +93,11 @@ class robot_gui(Ui_MainWindow):
         self.pushButton_2.clicked.connect(self.showDialog)
 
     def link_jog_buttons(self):
-        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("1500"))
+        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("500"))
         self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("100"))
         self.jog_stop.clicked.connect(self.set_jog_stop)
         self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-100"))
-        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-1500"))
+        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-500"))
 
     @pyqtSlot()
     def set_jog_speed(self, speed):
@@ -167,8 +167,10 @@ class robot_gui(Ui_MainWindow):
     def construct_command(self, **kwargs):
         # Start with empty string
         command = ""
+        # Iterate through input commands and add to output string
         for instruction, value in kwargs.items():
             command += "{0}:{1},".format(instruction, value)
+        # Remove final comma and encode for sending
         return command[0:-1].encode()
 
     def get_cleaned_line(self):
