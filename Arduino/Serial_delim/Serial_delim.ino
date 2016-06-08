@@ -55,6 +55,17 @@ void setup(){
   pinMode(26, OUTPUT);
   delay(100);
   pinMode(26, INPUT);
+  delay(50);
+
+  // Clear and stop all relevant timers
+  TCCR4B = 0;
+  TCNT4 = 0;
+  TCCR5B = 0;
+  TCNT5 = 0;
+
+  // Confirm start-up
+  Serial1.println("Control System Online");
+
 }
 
 void loop(){
@@ -323,12 +334,8 @@ void serialEvent1(){
           pinMode(A15, OUTPUT);
         }
         if(strcmp(ident, "INIT") == 0){
-          // Create blank message string
-          char s_report [30];
-          // Format positional and micro step into message string
-          sprintf(s_report, "sSP:%ld,EP:%ld,MS:%d", pos, encoder_position, microsteps);
-          // Print message string
-          Serial1.println(s_report);
+          //print_sensor_data();
+          print_status_report();
         }
       }
       // Find the next command in input string

@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from gui.robot_gui_ui import Ui_MainWindow
 from time import sleep, time
+from robot_control import Robot
 
 
 class Worker(QObject):
@@ -17,6 +18,9 @@ class robot_gui(Ui_MainWindow):
 
     def __init__(self):
         super(robot_gui, self).__init__()
+
+        self.robot = Robot()
+        self.robot.initialise()
 
         self.microsteps = 2
         self.rpm = 100
@@ -35,10 +39,10 @@ class robot_gui(Ui_MainWindow):
 
         self.ui = Ui_MainWindow()
         self.setupUi(self)
-        self.setup_xbee()
+        # self.setup_xbee()
         self.link_buttons()
-        self.ser.flush()
-        self.ser.write("RST:0,".encode())
+        # self.ser.flush()
+        # self.ser.write("RST:0,".encode())
         self.statusBar().showMessage("Ready")
 
     def update_lcd(self, i):
@@ -66,23 +70,6 @@ class robot_gui(Ui_MainWindow):
             for row in self.probe_data:
                 csvwriter.writerow(row)
 
-    def setup_xbee(self):
-
-        try:
-            self.ser = Serial("COM3", baudrate=57600, timeout=0.1)
-            self.ser.write("+++".encode())
-            while not self.ser.inWaiting():
-                pass
-            if self.ser.read(3) == b'OK\r':
-                self.ser.write("ATCN\r".encode())
-            while not self.ser.inWaiting():
-                pass
-            if self.ser.read(3) != b'OK\r':
-                print("xbee error")
-            self.ser.flush()
-        except:
-            print("Could not open serial port")
-
     def link_buttons(self):
         self.link_speed_buttons()
         self.link_microstep_buttons()
@@ -93,25 +80,27 @@ class robot_gui(Ui_MainWindow):
         self.pushButton_2.clicked.connect(self.showDialog)
 
     def link_jog_buttons(self):
-        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("500"))
+        self.jog_up_fast.clicked.connect(lambda: self.set_jog_speed("1500"))
         self.jog_up_slow.clicked.connect(lambda: self.set_jog_speed("100"))
         self.jog_stop.clicked.connect(self.set_jog_stop)
         self.jog_down_slow.clicked.connect(lambda: self.set_jog_speed("-100"))
-        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-500"))
+        self.jog_down_fast.clicked.connect(lambda: self.set_jog_speed("-1500"))
 
     @pyqtSlot()
     def set_jog_speed(self, speed):
         self.jog_mode = False
-        self.ser.write("MIC:{0},JOG:{1}".format(
-            self.microsteps, speed).encode())
+
+        #self.ser.write("MIC:{0},JOG:{1}".format(
+        #    self.microsteps, speed).encode())
+        self.robot.jog_speed(speed)
         self.jog_mode = True
         threading.Thread(target=self.run_jog_mode).start()
 
     @pyqtSlot()
     def set_jog_stop(self):
-        self.ser.write("JOG:0".encode())
+        self.robot.jog_speed(0)
         sleep(0.1)
-        self.ser.write("JOG:0".encode())
+        self.robot.jog_speed(0)
         self.jog_stop.setAutoExclusive(False)
         self.jog_stop.setChecked(False)
         self.jog_stop.setAutoExclusive(True)
@@ -128,19 +117,8 @@ class robot_gui(Ui_MainWindow):
         threading.Thread(target=self.run_commands).start()
 
     def zero(self):
-        self.ser.write("ZER:0".encode())
-        while not self.ser.inWaiting():
-            sleep(0.001)
-
-        line = ""
-        while "SP:0" not in line:
-            try:
-                line = self.get_cleaned_line()
-                print(line)
-            except:
-                pass
-        print(line)
-        self.handle_status_message(line)
+        # Update motor position QLCDNumber widget
+        self.obj.position.emit(robot.zero())
 
     def link_speed_buttons(self):
         self.speed_50.pressed.connect(lambda: self.set_speed(self.speed_50))
@@ -164,28 +142,10 @@ class robot_gui(Ui_MainWindow):
     def set_microsteps(self, b):
         self.microsteps = int(b.text()[0])
 
-    def construct_command(self, **kwargs):
-        # Start with empty string
-        command = ""
-        # Iterate through input commands and add to output string
-        for instruction, value in kwargs.items():
-            command += "{0}:{1},".format(instruction, value)
-        # Remove final comma and encode for sending
-        return command[0:-1].encode()
-
-    def get_cleaned_line(self):
-        # Read bytes until EOL
-        raw = self.ser.readline()
-        # Convert from bytes to string and remove EOL characters
-        return raw.decode().rstrip("\r\n")
-
     def handle_sensor_data(self, line):
-        # Split line into individual readings ignoring indicator
-        data = line[1:].split(",")
-        # Get position in terms of rotations
-        self.position = (int(data[0]) / 200)
+        data = self.robot.handle_sensor_data(line)
         # Update motor position QLCDNumber widget
-        self.obj.position.emit(self.position)
+        self.obj.position.emit(self.robot.position)
         # Check data isn't blank
         if len(data) == 5:
             # Add readings to dataset
@@ -194,10 +154,7 @@ class robot_gui(Ui_MainWindow):
             self.errors += 1
 
     def handle_status_message(self, line):
-        # First split string into individual messages
-        data = line[1:].split(",")
-        # Get position in terms of rotations
-        self.position = (int(data[0][3:]) / 200)
+        self.position = self.robot.handle_status_message(line)
         # Update motor position QLCDNumber widget
         self.obj.position.emit(self.position)
         # Check data isn't blank
@@ -208,10 +165,10 @@ class robot_gui(Ui_MainWindow):
             # Try/Except statements as serial read can fail
             try:
                 # Check for available data to read in
-                if self.ser.inWaiting():
+                if self.robot.xbee.inWaiting():
 
                     # Decode and strip EOL characters
-                    line = self.get_cleaned_line()
+                    line = self.robot.get_cleaned_line()
                     # Indicates a robot status string
                     if line[0] == "s":
                         self.handle_status_message(line)
@@ -230,7 +187,7 @@ class robot_gui(Ui_MainWindow):
 
         start_time = time()
         # Generate a command string from set variables
-        command = self.construct_command(
+        self.robot.construct_command(
             MIC=self.microsteps,
             STP=self.rpm,
             INT=self.intervals,
@@ -238,7 +195,7 @@ class robot_gui(Ui_MainWindow):
             RUN=1)
 
         # Start first run
-        self.ser.write(command)
+        self.robot.send_command()
 
         # Variable to keep track of how many runs have happened
         current_run = 0
@@ -251,10 +208,10 @@ class robot_gui(Ui_MainWindow):
             # Try/Except statements as serial read can fail
             try:
                 # Check for available data to read in
-                if self.ser.inWaiting():
+                if self.robot.xbee.inWaiting():
 
                     # Decode and strip EOL characters
-                    line = self.get_cleaned_line()
+                    line = self.robot.get_cleaned_line()
                     # Get first character in string to indicate type
                     indicator = line[0]
 
@@ -275,7 +232,7 @@ class robot_gui(Ui_MainWindow):
                             self.running = False
                         # Send repeat command to keep running
                         else:
-                            self.ser.write(command)
+                            self.robot.send_command()
                     elif line == "END":
                         end_hit = True
                     # Debug output for invalid data string
@@ -292,18 +249,18 @@ class robot_gui(Ui_MainWindow):
         # Update status bar to "Done" and enable/disable run/stop buttons
         self.obj.finished.emit()
         print("Error rate: {0}%".format(
-            self.errors/len(self.probe_data) * 100))
+            self.errors / len(self.probe_data) * 100))
         print("Frequncy: {0}Hz".format(
-            len(self.probe_data)/(time()-start_time)))
+            len(self.probe_data) / (time() - start_time)))
 
     def handle_end_data(self):
         # Wait for any remaining serial data
         sleep(0.1)
         # Handle last few status messages
-        while self.ser.inWaiting():
+        while self.robot.xbee.inWaiting():
             try:
                 # Decode and strip EOL characters
-                line = self.get_cleaned_line()
+                line = self.robot.get_cleaned_line()
                 # Indicates a robot status string
                 if line[0] == "v":
                     self.handle_sensor_data(line)
