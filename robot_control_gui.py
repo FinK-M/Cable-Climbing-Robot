@@ -1,7 +1,6 @@
 import sys
 import threading
 import csv
-from serial import Serial
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from gui.robot_gui_ui import Ui_MainWindow
@@ -39,10 +38,7 @@ class robot_gui(Ui_MainWindow):
 
         self.ui = Ui_MainWindow()
         self.setupUi(self)
-        # self.setup_xbee()
         self.link_buttons()
-        # self.ser.flush()
-        # self.ser.write("RST:0,".encode())
         self.statusBar().showMessage("Ready")
 
     def update_lcd(self, i):
@@ -89,9 +85,6 @@ class robot_gui(Ui_MainWindow):
     @pyqtSlot()
     def set_jog_speed(self, speed):
         self.jog_mode = False
-
-        #self.ser.write("MIC:{0},JOG:{1}".format(
-        #    self.microsteps, speed).encode())
         self.robot.jog_speed(speed)
         self.jog_mode = True
         threading.Thread(target=self.run_jog_mode).start()

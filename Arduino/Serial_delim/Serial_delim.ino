@@ -398,7 +398,6 @@ int get_ocrna(int rpm){
   // OCR4A = clock / 2 / prescaler / desired frequency
   float val = 8000000L / freq;
   // Convert to integer
-  Serial.println(freq);
   return (int) val;
 }
 

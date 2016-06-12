@@ -144,4 +144,3 @@ class Robot(object):
 if __name__ == "__main__":
     r = Robot()
     r.initialise()
-    r.zero()
