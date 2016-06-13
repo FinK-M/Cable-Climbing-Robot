@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy import signal as sig
 
 # Read in test data from
-with open('test_data.csv', 'r') as csvfile:
+with open('test_data_corrosion.csv', 'r') as csvfile:
     csvreader = csv.reader(csvfile)
     data = [row for row in csvreader]
     data = list(zip(*data[1:]))
@@ -21,50 +21,86 @@ A = np.array(list(map(float, data[1])))
 B = np.array(list(map(float, data[2])))
 C = np.array(list(map(float, data[3])))
 
-A_med = sig.medfilt(A, kernel_size=5)
-A_filt = sig.savgol_filter(A_med, 45, 5)
-A_indexes = pk.indexes(A_filt, thres=0.7, min_dist=50)
+# Create Array of sensor outputs
+sigs = np.array([A, B, C])
 
-B_med = sig.medfilt(B, kernel_size=5)
-B_filt = sig.savgol_filter(B_med, 45, 5)
-B_indexes = pk.indexes(B_filt, thres=0.7, min_dist=50)
+# Perform median filter on each dataset
+sigs_med = np.array([sig.medfilt(s, kernel_size=11) for s in sigs])
 
-C_med = sig.medfilt(C, kernel_size=5)
-C_filt = sig.savgol_filter(C_med, 45, 5)
-C_indexes = pk.indexes(C_filt, thres=0.7, min_dist=50)
+# Perform Savitzky–Golay filter operation
+sigs_filt = [sig.savgol_filter(
+    s, window_length=75, polyorder=9) for s in sigs_med]
 
-# indexes = sig.find_peaks_cwt(A_filt, np.arange(90, 120))
-A_idx_height = [A_filt[idx] for idx in A_indexes]
-A_main_peak = max(A_idx_height)
+# Get indexes of detected peaks
+sigs_indexes = np.array([list(pk.indexes(
+    s, thres=0.7, min_dist=40)) for s in sigs_filt])
 
-B_idx_height = [B_filt[idx] for idx in B_indexes]
-B_main_peak = max(B_idx_height)
+sigs_idx_heights = []
+sigs_main_peaks = [[] for _ in range(3)]
 
-C_idx_height = [C_filt[idx] for idx in C_indexes]
-C_main_peak = max(C_idx_height)
+# Get exact index and height of maximum peak in each dataset
+for j, s in enumerate(sigs_filt):
+    sigs_idx_heights.append(list(s[sigs_indexes[j]]))
+    temp = max(sigs_idx_heights[j])
+    sigs_main_peaks[j].append([np.where(s == temp)[0][0]])
+    sigs_main_peaks[j].append([temp])
 
-plt.figure(1)
-plt.subplot(121)
-plt.plot(A)
-plt.title("Input Signal")
-plt.subplot(122)
-plt.plot(A_filt, 'b', A_indexes, A_idx_height, 'ro')
-plt.title("Filtered Signal")
+# Get nearest likely minimums on left
+for sig_num, signal in enumerate(sigs_filt):
+    idx = sigs_main_peaks[sig_num][0][0]
+    value = sigs_main_peaks[sig_num][1][0]
+    while True:
+        if 0 > value == min(signal[idx:idx - 10:-1]):
+            sigs_main_peaks[sig_num][0].append(idx)
+            sigs_main_peaks[sig_num][1].append(value)
+            break
+        idx -= 1
+        value = signal[idx]
 
-plt.figure(2)
-plt.subplot(121)
-plt.plot(B)
-plt.title("Input Signal")
-plt.subplot(122)
-plt.plot(B_filt, 'b', B_indexes, B_idx_height, 'ro')
-plt.title("Filtered Signal")
+# Get nearest likely minimums on right
+for sig_num, signal in enumerate(sigs_filt):
+    idx = sigs_main_peaks[sig_num][0][0]
+    value = sigs_main_peaks[sig_num][1][0]
+    while True:
+        if 0 > value == min(signal[idx:idx + 10]):
+            sigs_main_peaks[sig_num][0].append(idx)
+            sigs_main_peaks[sig_num][1].append(value)
+            break
+        idx += 1
+        value = signal[idx]
 
-plt.figure(3)
-plt.subplot(121)
-plt.plot(C)
-plt.title("Input Signal")
-plt.subplot(122)
-plt.plot(C_filt, 'b', C_indexes, C_idx_height, 'ro')
-plt.title("Filtered Signal")
+
+avg = []
+idx_l = []
+idx_r = []
+
+for i in range(3):
+    s_idx = sigs_main_peaks[i][0]
+
+    avg.append(np.percentile(A[s_idx[1]:s_idx[2]], 45))
+
+    idx_l.append((np.abs(sigs_filt[0][s_idx[1]:s_idx[0]] -
+                         avg[i])).argmin() + s_idx[1])
+
+    idx_r.append((np.abs(sigs_filt[0][s_idx[0]:s_idx[2]] -
+                         avg[i])).argmin() + s_idx[0])
+
+
+# Plot input datasets and corresponding maximum peaks
+for i in range(3):
+    plt.figure(i)
+    plt.subplot(121)
+    plt.plot(
+        sigs[i], 'b',
+        *sigs_main_peaks[i], 'ro',
+        [idx_l[i], idx_r[i]], [avg[i], avg[i]], 'go-')
+    plt.title("Input Signal")
+    plt.subplot(122)
+    plt.plot(
+        sigs_filt[i], 'b',
+        *sigs_main_peaks[i], 'ro',
+        [idx_l[i], idx_r[i]], [avg[i], avg[i]], 'go-')
+    plt.title("Filtered Signal")
+
 
 plt.show()
