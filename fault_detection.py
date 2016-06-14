@@ -3,33 +3,43 @@ from matplotlib import use
 # Select correct back-end
 use("Qt5Agg")
 
-import csv
+import openpyxl
 import numpy as np
 import peakutils as pk
 import matplotlib.pyplot as plt
 from scipy import signal as sig
 
-# Read in test data from
-with open('test_data_corrosion.csv', 'r') as csvfile:
-    csvreader = csv.reader(csvfile)
-    data = [row for row in csvreader]
-    data = list(zip(*data[1:]))
+# Input data parameters
+data_file = "all_data.xlsx"
+data_type = "cuts"
+data_set = 0
 
-# Convert each data column to a numpy array object
-X = np.array(list(map(float, data[0])))
-A = np.array(list(map(float, data[1])))
-B = np.array(list(map(float, data[2])))
-C = np.array(list(map(float, data[3])))
+# Open excel data file
+wb = openpyxl.load_workbook(data_file)
+sheet = wb.get_sheet_by_name(data_type)
+
+X = np.array([c.value for c in sheet.columns[0 + data_set * 5]][1:])
+A = np.array([c.value for c in sheet.columns[1 + data_set * 5]][1:])
+B = np.array([c.value for c in sheet.columns[2 + data_set * 5]][1:])
+C = np.array([c.value for c in sheet.columns[3 + data_set * 5]][1:])
 
 # Create Array of sensor outputs
 sigs = np.array([A, B, C])
 
 # Perform median filter on each dataset
-sigs_med = np.array([sig.medfilt(s, kernel_size=11) for s in sigs])
+# sigs_med = np.array([sig.medfilt(s, kernel_size=11) for s in sigs])
+
+sigs_fft_noise = np.array([np.fft.rfft(sig.detrend(s[:200])) for s in sigs])
+sigs_fft = np.array(
+    [(np.fft.rfft(s)[:101] - sigs_fft_noise[i]) for i, s in enumerate(sigs)])
+sigs_ifft = np.array(
+    [np.fft.irfft(s) for s in sigs_fft])
+sigs_ifft = np.array(
+    [s * (max(sigs[i]) / max(s)) for i, s in enumerate(sigs_ifft)])
 
 # Perform Savitzky–Golay filter operation
 sigs_filt = [sig.savgol_filter(
-    s, window_length=75, polyorder=9) for s in sigs_med]
+    s, window_length=31, polyorder=9) for s in sigs_ifft]
 
 # Get indexes of detected peaks
 sigs_indexes = np.array([list(pk.indexes(
@@ -50,7 +60,7 @@ for sig_num, signal in enumerate(sigs_filt):
     idx = sigs_main_peaks[sig_num][0][0]
     value = sigs_main_peaks[sig_num][1][0]
     while True:
-        if 0 > value == min(signal[idx:idx - 10:-1]):
+        if 0 > value == min(signal[idx:idx - 15:-1]):
             sigs_main_peaks[sig_num][0].append(idx)
             sigs_main_peaks[sig_num][1].append(value)
             break
@@ -91,7 +101,7 @@ for i in range(3):
     plt.figure(i)
     plt.subplot(121)
     plt.plot(
-        sigs[i], 'b',
+        np.arange(0, 200.1, 1 / 3), sigs[i], 'b',
         *sigs_main_peaks[i], 'ro',
         [idx_l[i], idx_r[i]], [avg[i], avg[i]], 'go-')
     plt.title("Input Signal")
