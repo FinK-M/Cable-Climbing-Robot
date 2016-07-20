@@ -111,7 +111,7 @@ class robot_gui(Ui_MainWindow):
 
     def zero(self):
         # Update motor position QLCDNumber widget
-        self.obj.position.emit(robot.zero())
+        self.obj.position.emit(self.robot.zero())
 
     def link_speed_buttons(self):
         self.speed_50.pressed.connect(lambda: self.set_speed(self.speed_50))

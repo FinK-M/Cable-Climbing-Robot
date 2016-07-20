@@ -267,18 +267,23 @@ void serialEvent1(){
         }
         else if(strcmp(ident, "JOG") == 0){
           // First stop motor running
+          /*
           if(!stopped){
+            Serial.print("Stopping here 1");
             stop_stepper();
             stopped = true;
           }
+          */
           // Get jog speed
           int stepper_value = atoi(value);
           // Disable jog mode
           if(stepper_value == 0){
+            stop_stepper();
             stopped = true;
             jog_mode = false;
             ADCSRA |= _BV(ADIE);
             ADCSRA |= _BV(ADSC);
+            Serial.print("Stopping here 2");
           }
           // Jog upwards
           else if(stepper_value > 0){
@@ -383,7 +388,7 @@ void start_stepper(int rpm){
 void accelerate_stepper(int rpm){
   for(int temp = 20; temp < rpm; temp += rpm/100){
     OCR4A = get_ocrna(temp);
-        if(jog_mode)
+    if(jog_mode)
       print_status_report();
     else
       print_sensor_data();
@@ -440,6 +445,7 @@ void stop_stepper(){
     print_status_report();
   else
     print_sensor_data();
+  stopped = true;
 }
 
 void decelerate_stepper(int stop_value){
